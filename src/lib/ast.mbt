@@ -1,0 +1,78 @@
+
+pub enum Type {
+  Int; Void
+} derive(Eq)
+
+pub enum Expr {
+  Constant(Int)
+  Unary(~op: UnaryOp, ~expr: Expr)
+}
+
+pub enum Stmt {
+  Return(Expr)
+}
+
+pub enum Decl {
+  Function(~returnType: Type, ~name: String, ~body: Stmt)
+}
+
+pub struct Program {
+  decls: Array[Decl]
+}
+
+pub fn Program::new(decls: Array[Decl]) -> Program {
+  { decls, }
+}
+
+pub enum UnaryOp {
+  Neg; Not
+} derive(Eq)
+
+pub impl Show for Type with output(self, logger: Logger) {
+  logger.write_string(match self {
+    Int => "int"
+    Void => "void"
+  })
+}
+
+pub impl Show for UnaryOp with output(self, logger: Logger) {
+  logger.write_string(match self {
+    Neg => "-"
+    Not => "~"
+  })
+}
+
+pub impl Show for Expr with output(self, logger: Logger) {
+  match self {
+    Constant(n) => {
+      logger.write_string(n.to_string())
+    }
+    Unary(~op, ~expr) => {
+      logger.write_string(Show::to_string(op))
+      logger.write_string("(")
+      logger.write_string(Show::to_string(expr))
+      logger.write_string(")")
+    }
+  }
+}
+
+pub impl Show for Stmt with output(self, logger: Logger) {
+  match self {
+    Return(expr) => {
+      logger.write_string("return \{Show::to_string(expr)};")
+    }
+  }
+}
+
+pub impl Show for Decl with output(self, logger: Logger) {
+  match self {
+    Function(~returnType, ~name, ~body) => {
+      logger.write_string(Show::to_string(returnType))
+      logger.write_string(" ")
+      logger.write_string(name)
+      logger.write_string("(void) { ")
+      logger.write_string(Show::to_string(body))
+      logger.write_string(" }")
+    }
+  }
+}

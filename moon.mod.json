@@ -1,0 +1,10 @@
+{
+  "name": "nathsou/compote",
+  "version": "0.1.0",
+  "readme": "README.md",
+  "repository": "",
+  "license": "AGPL",
+  "keywords": [],
+  "description": "A toy C compiler",
+  "source": "src"
+}
