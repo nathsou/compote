@@ -1,6 +1,6 @@
 
 pub enum AsmReg {
-  AX; R10
+  AX; DX; R10; R11
 }
 
 pub enum AsmOperand {
@@ -14,9 +14,16 @@ pub enum AsmUnaryOp {
   Neg; Not
 }
 
+pub enum AsmBinaryOp {
+  Add; Sub; Mul
+}
+
 pub enum AsmInst {
   Mov(~src: AsmOperand, ~dst: AsmOperand)
   Unary(~op: AsmUnaryOp, ~dst: AsmOperand)
+  Binary(~op: AsmBinaryOp, ~src: AsmOperand, ~dst: AsmOperand)
+  IDiv(~src: AsmOperand)
+  Cdq
   AllocateStack(~size: Int)
   Ret
 }

@@ -28,6 +28,14 @@ fn convert_expr(self: TacBuilder, expr: Expr) -> TacValue {
       self.emit(Unary(~op, ~src, ~dst))
       dst
     }
+    Binary(~op, ~lhs, ~rhs) => {
+      let v1 = self.convert_expr(lhs)
+      let v2 = self.convert_expr(rhs)
+      let dst_name = self.new_var()
+      let dst = TacValue::Variable(dst_name)
+      self.emit(Binary(~op, ~lhs=v1, ~rhs=v2, ~dst))
+      dst
+    }
   }
 }
 

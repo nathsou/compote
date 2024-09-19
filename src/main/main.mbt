@@ -2,11 +2,14 @@
 type! CompilerError {
   Lexer(@lib.LexerError)
   Parser(@lib.ParserError)
+  AsmBuilder(@lib.AsmBuilderError)
   Emitter(@lib.EmitterError)
 } derive(Show)
 
 fn read_source_file_char(index: Int) -> Char = "host" "read_source_file_char"
 fn get_source_file_length() -> Int = "host" "get_source_file_length"
+
+fn output_char(c: Char, done: Bool) = "host" "output_char"
 
 fn read_source_file() -> String {
   let len = get_source_file_length()
@@ -45,7 +48,11 @@ fn tac_gen(source: String) -> @lib.TacProgram!CompilerError {
 
 fn codegen(source: String) -> @lib.AsmProgram!CompilerError {
   let program = tac_gen!(source)
-  program.asm()
+  
+  match program.asm?() {
+    Ok(asm) => asm
+    Err(error) => raise AsmBuilder(error)
+  }
 }
 
 fn assemble(source: String, ~os: @lib.OperatingSystem) -> String!CompilerError {
@@ -57,12 +64,20 @@ fn assemble(source: String, ~os: @lib.OperatingSystem) -> String!CompilerError {
   }
 }
 
+fn output_string(s: String) -> Unit {
+  let len = s.length()
+
+  for i in 0..<len {
+    output_char(s[i], i == len - 1)
+  }
+}
+
 fn main {
   let source = read_source_file()
   
   match assemble?(source, ~os=Linux) {
     Ok(asm) => {
-      println(asm)
+      output_string(asm)
     }
     Err(error) => {
       println("Error: \{error}")

@@ -48,8 +48,12 @@ fn emit(self: Emitter, line: String) -> Unit {
 fn asm(self: AsmOperand) -> String!EmitterError {
   match self {
     Imm(n) => "$\{n}"
-    Reg(AX) => "%eax"
-    Reg(R10) => "%r10"
+    Reg(reg) => match reg {
+      AX => "%eax"
+      DX => "%edx"
+      R10 => "%r10d"
+      R11 => "%r11d"
+    }
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
   }
@@ -62,16 +66,33 @@ fn asm(self: AsmUnaryOp) -> String {
   }
 }
 
+fn asm(self: AsmBinaryOp) -> String {
+  match self {
+    Add => "addl"
+    Sub => "subl"
+    Mul => "imul"
+  }
+}
+
 fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
   match inst {
     Mov(~src, ~dst) => {
-      self.emit("mov \{src.asm!()}, \{dst.asm!()}")
+      self.emit("movl \{src.asm!()}, \{dst.asm!()}")
     }
     Unary(~op, ~dst) => {
       self.emit("\{op.asm()} \{dst.asm!()}")
     }
+    Binary(~op, ~src, ~dst) => {
+      self.emit("\{op.asm()} \{src.asm!()}, \{dst.asm!()}")
+    }
+    IDiv(~src) => {
+      self.emit("idivl \{src.asm!()}")
+    }
+    Cdq => {
+      self.emit("cdq")
+    }
     AllocateStack(~size) => {
-      self.emit("subq $\{size}, %rsp")
+      self.emit("subq $\{size.abs()}, %rsp")
     }
     Ret => {
       // function epilogue
@@ -105,7 +126,7 @@ pub fn emit_program(self: Emitter, program: AsmProgram) -> Unit!EmitterError {
   }
 
   if self.os == Linux {
-    self.emit(".section .note.GNU-stack, \"\", @progbits")
+    self.emit(".section .note.GNU-stack, \"\",@progbits")
   }
 }
 

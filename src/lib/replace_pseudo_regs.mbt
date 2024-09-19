@@ -36,6 +36,16 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst {
       let dst = self.rewrite_operand(dst)
       Unary(~op, ~dst)
     }
+    Binary(~op, ~src, ~dst) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Binary(~op, ~src, ~dst)
+    }
+    IDiv(~src) => {
+      let src = self.rewrite_operand(src)
+      IDiv(~src)
+    }
+    Cdq => Cdq
     AllocateStack(~size) => AllocateStack(~size)
     Ret => Ret
   }

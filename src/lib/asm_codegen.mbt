@@ -3,6 +3,10 @@ pub struct AsmBuilder {
   instructions: Array[AsmInst]
 }
 
+pub type! AsmBuilderError {
+  UnreachableBinaryOpConversion(BinaryOp)
+} derive(Show)
+
 pub fn AsmBuilder::new() -> AsmBuilder {
   { instructions: [] }
 }
@@ -18,6 +22,15 @@ fn asm(self: UnaryOp) -> AsmUnaryOp {
   }
 }
 
+fn asm(self: BinaryOp) -> AsmBinaryOp!AsmBuilderError {
+  match self {
+    Add => Add
+    Sub => Sub
+    Mul => Mul
+    Div | Rem => raise UnreachableBinaryOpConversion(self)
+  }
+}
+
 fn asm(self: TacValue) -> AsmOperand {
   match self {
     Constant(n) => Imm(n)
@@ -25,7 +38,7 @@ fn asm(self: TacValue) -> AsmOperand {
   }
 }
 
-fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit {
+fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
   match inst {
     Return(value) => {
       let src = value.asm()
@@ -38,17 +51,36 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit {
       self.emit(Mov(~src, ~dst))
       self.emit(Unary(~op=op.asm(), ~dst))
     }
+    Binary(~op, ~lhs, ~rhs, ~dst) => {
+      let lhs = lhs.asm()
+      let rhs = rhs.asm()
+      let dst = dst.asm()
+      
+      match op {
+        Div | Rem => {
+          let output_reg = if op == Div { AX } else { DX }
+          self.emit(Mov(~src=lhs, ~dst=Reg(AX)))
+          self.emit(Cdq)
+          self.emit(IDiv(~src=rhs))
+          self.emit(Mov(~src=Reg(output_reg), ~dst))
+        }
+        _ => {
+          self.emit(Mov(~src=lhs, ~dst))
+          self.emit(Binary(~op=op.asm!(), ~src=rhs, ~dst))
+        }
+      }
+    }
   }
 }
 
-pub fn asm(self: TacFunctionDef) -> AsmFunctionDef {
+pub fn asm(self: TacFunctionDef) -> AsmFunctionDef!AsmBuilderError {
   let builder = AsmBuilder::new()
 
   // placeholder for stack allocation
   builder.emit(AllocateStack(~size=0))
 
   for inst in self.body {
-    builder.convert_inst(inst)
+    builder.convert_inst!(inst)
   }
 
   let pass1 = ReplacePseudoRegsPass::new()
@@ -62,6 +94,12 @@ pub fn asm(self: TacFunctionDef) -> AsmFunctionDef {
   { name: self.name, body: insts2 }
 }
 
-pub fn asm(self: TacProgram) -> AsmProgram {
-  { functions: self.functions.map(TacFunctionDef::asm) }
+pub fn asm(self: TacProgram) -> AsmProgram!AsmBuilderError {
+  let functions = []
+
+  for f in self.functions {
+    functions.push(f.asm!())
+  }
+
+  { functions, }
 }

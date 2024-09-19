@@ -7,6 +7,7 @@ pub enum TacValue {
 pub enum TacInst {
   Return(TacValue)
   Unary(~op: UnaryOp, ~src: TacValue, ~dst: TacValue)
+  Binary(~op: BinaryOp, ~lhs: TacValue, ~rhs: TacValue, ~dst: TacValue)
 } derive(Show)
 
 pub struct TacFunctionDef {

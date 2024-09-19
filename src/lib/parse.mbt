@@ -78,7 +78,30 @@ fn parse_type(self: Parser) -> Type!ParserError {
   }
 }
 
-fn parse_expr(self: Parser) -> Expr!ParserError {
+fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
+  let mut lhs = self.parse_factor!()
+
+  while true {
+    match self.peek().to_binop() {
+      Some(op) => {
+        let precedence = op.precedence()
+
+        if precedence >= min_precedence {
+          self.advance() // consume the operator
+          let rhs = self.precedence_climbing!(precedence + 1)
+          lhs = Binary(~op=op, ~lhs, ~rhs)
+        } else {
+          break
+        }
+      }
+      None => break
+    }
+  }
+
+  lhs
+}
+
+fn parse_factor(self: Parser) -> Expr!ParserError {
   let token = self.peek()
 
   match token {
@@ -104,6 +127,10 @@ fn parse_expr(self: Parser) -> Expr!ParserError {
     }
     _ => raise ExpectedExpr(token)
   }
+}
+
+fn parse_expr(self: Parser) -> Expr!ParserError {
+  self.precedence_climbing!(0)
 }
 
 fn parse_stmt(self: Parser) -> Stmt!ParserError {

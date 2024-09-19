@@ -6,6 +6,7 @@ pub enum Type {
 pub enum Expr {
   Constant(Int)
   Unary(~op: UnaryOp, ~expr: Expr)
+  Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr)
 }
 
 pub enum Stmt {
@@ -28,6 +29,18 @@ pub enum UnaryOp {
   Neg; Not
 } derive(Eq)
 
+pub enum BinaryOp {
+  Add; Sub; Mul; Div; Rem
+} derive(Eq)
+
+// see https://en.cppreference.com/w/c/language/operator_precedence
+pub fn precedence(self: BinaryOp) -> Int {
+  match self {
+    Mul | Div | Rem => 50
+    Add | Sub => 45
+  }
+}
+
 pub impl Show for Type with output(self, logger: Logger) {
   logger.write_string(match self {
     Int => "int"
@@ -42,6 +55,16 @@ pub impl Show for UnaryOp with output(self, logger: Logger) {
   })
 }
 
+pub impl Show for BinaryOp with output(self, logger: Logger) {
+  logger.write_string(match self {
+    Add => "+"
+    Sub => "-"
+    Mul => "*"
+    Div => "/"
+    Rem => "%"
+  })
+}
+
 pub impl Show for Expr with output(self, logger: Logger) {
   match self {
     Constant(n) => {
@@ -52,6 +75,9 @@ pub impl Show for Expr with output(self, logger: Logger) {
       logger.write_string("(")
       logger.write_string(Show::to_string(expr))
       logger.write_string(")")
+    }
+    Binary(~op, ~lhs, ~rhs) => {
+      logger.write_string("\{Show::to_string(lhs)} \{Show::to_string(op)} \{Show::to_string(rhs)}")
     }
   }
 }
