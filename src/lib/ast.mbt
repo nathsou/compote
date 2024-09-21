@@ -26,12 +26,15 @@ pub fn Program::new(decls: Array[Decl]) -> Program {
 }
 
 pub enum UnaryOp {
-  Neg; Not
+  Neg; Complement; Not
 } derive(Eq)
 
 pub enum BinaryOp {
   Add; Sub; Mul; Div; Rem
-  And; Or; Xor; Shl; Shr
+  BitwiseAnd; BitwiseOr; BitwiseXor;
+  Shl; Shr
+  Equ; Neq; Lss; Leq; Gtr; Geq
+  LogicalAnd; LogicalOr
 } derive(Eq)
 
 // https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
@@ -40,9 +43,13 @@ pub fn precedence(self: BinaryOp) -> Int {
     Mul | Div | Rem => 50
     Add | Sub => 45
     Shl | Shr => 40
-    And => 35
-    Xor => 30
-    Or => 25
+    Lss | Leq | Gtr | Geq => 35
+    Equ | Neq => 30
+    BitwiseAnd => 30
+    BitwiseXor => 25
+    BitwiseOr => 20
+    LogicalAnd => 10
+    LogicalOr => 5
   }
 }
 
@@ -56,7 +63,8 @@ pub impl Show for Type with output(self, logger: Logger) {
 pub impl Show for UnaryOp with output(self, logger: Logger) {
   logger.write_string(match self {
     Neg => "-"
-    Not => "~"
+    Complement => "~"
+    Not => "!"
   })
 }
 
@@ -67,11 +75,19 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
     Mul => "*"
     Div => "/"
     Rem => "%"
-    And => "&"
-    Or => "|"
-    Xor => "^"
+    BitwiseAnd => "&"
+    BitwiseOr => "|"
+    BitwiseXor => "^"
     Shl => "<<"
     Shr => ">>"
+    Equ => "=="
+    Neq => "!="
+    Lss => "<"
+    Leq => "<="
+    Gtr => ">"
+    Geq => ">="
+    LogicalAnd => "&&"
+    LogicalOr => "||"
   })
 }
 

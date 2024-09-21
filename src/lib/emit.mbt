@@ -20,6 +20,13 @@ fn symbol(self: OperatingSystem, name: String) -> String {
   }
 }
 
+fn label(self: OperatingSystem, name: String) -> String {
+  match self {
+    Linux => ".L" + name
+    MacOS => "L" + name
+  }
+}
+
 fn repeat_string(str: String, n: Int) -> String {
   if n == 0 {
     return ""
@@ -45,17 +52,32 @@ fn emit(self: Emitter, line: String) -> Unit {
   self.lines.push(repeat_string("  ", self.indentation) + line)
 }
 
-fn asm(self: AsmOperand) -> String!EmitterError {
+fn asm(self: AsmOperand, size: RegSize) -> String!EmitterError {
   match self {
     Imm(n) => "$\{n}"
     Reg(reg) => match reg {
-      AX => "%eax"
-      DX => "%edx"
-      R10 => "%r10d"
-      R11 => "%r11d"
-      ECX => "%ecx"
-      CL => "%cl"
+      AX => match size {
+        Byte => "%al"
+        Long => "%eax"
+      }
+      DX => match size {
+        Byte => "%dl"
+        Long => "%edx"
+      }
+      R10 => match size {
+        Byte => "%r10b"
+        Long => "%r10d"
+      }
+      R11 => match size {
+        Byte => "%r11b"
+        Long => "%r11d"
+      }
+      CL => match size {
+        Byte => "%cl"
+        Long => "%ecx"
+      }
     }
+    RegSize(reg, size) => Reg(reg).asm!(size)
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
   }
@@ -64,7 +86,7 @@ fn asm(self: AsmOperand) -> String!EmitterError {
 fn asm(self: AsmUnaryOp) -> String {
   match self {
     Neg => "negl"
-    Not => "notl"
+    BitwiseNot => "notl"
   }
 }
 
@@ -81,22 +103,51 @@ fn asm(self: AsmBinaryOp) -> String {
   }
 }
 
+fn suffix(self: CondCode) -> String {
+  match self {
+    Eq => "e"
+    Ne => "ne"
+    Lt => "l"
+    Le => "le"
+    Gt => "g"
+    Ge => "ge"
+  }
+}
+
 fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
   match inst {
     Mov(~src, ~dst) => {
-      self.emit("movl \{src.asm!()}, \{dst.asm!()}")
+      self.emit("movl \{src.asm!(Long)}, \{dst.asm!(Long)}")
     }
     Unary(~op, ~dst) => {
-      self.emit("\{op.asm()} \{dst.asm!()}")
+      self.emit("\{op.asm()} \{dst.asm!(Long)}")
+    }
+    Binary(~op=Shl | Sal as op, ~src, ~dst) => {
+      self.emit("\{op.asm()} \{src.asm!(Long)}, \{dst.asm!(Byte)}")
     }
     Binary(~op, ~src, ~dst) => {
-      self.emit("\{op.asm()} \{src.asm!()}, \{dst.asm!()}")
+      self.emit("\{op.asm()} \{src.asm!(Long)}, \{dst.asm!(Long)}")
+    }
+    Cmp(~src, ~dst) => {
+      self.emit("cmpl \{src.asm!(Long)}, \{dst.asm!(Long)}")
     }
     IDiv(~src) => {
-      self.emit("idivl \{src.asm!()}")
+      self.emit("idivl \{src.asm!(Long)}")
     }
     Cdq => {
       self.emit("cdq")
+    }
+    Jmp(target) => {
+      self.emit("jmp \{self.os.label(target)}")
+    }
+    JmpCond(~cond, ~target) => {
+      self.emit("j\{cond.suffix()} \{self.os.label(target)}")
+    }
+    SetCond(~cond, ~dst) => {
+      self.emit("set\{cond.suffix()} \{dst.asm!(Byte)}")
+    }
+    Label(name) => {
+      self.emit(self.os.label(name) + ":")
     }
     AllocateStack(~size) => {
       self.emit("subq $\{size.abs()}, %rsp")

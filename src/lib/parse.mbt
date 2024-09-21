@@ -117,6 +117,11 @@ fn parse_factor(self: Parser) -> Expr!ParserError {
     Tilde => {
       self.advance()
       let expr = self.parse_factor!()
+      Unary(~op=Complement, ~expr)
+    }
+    Bang => {
+      self.advance()
+      let expr = self.parse_factor!()
       Unary(~op=Not, ~expr)
     }
     Lparen => {

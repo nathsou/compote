@@ -1,7 +1,10 @@
 
 pub enum Token {
   // symbols
-  Lparen; Rparen; Lbrace; Rbrace; Comma; Semicolon; Plus; Minus; Star; Slash; Percent; Tilde
+  Lparen; Rparen; Lbrace; Rbrace; Comma; Semicolon
+  Plus; Minus; Star; Slash; Percent; Tilde; Bang
+  AmpersandAmpersand; PipePipe; EqualEqual; BangEqual
+  Less; Greater; LessEqual; GreaterEqual
   Ampersand; Pipe; Caret; Lshift; Rshift
   // keywords
   Int; Return; Void
@@ -18,11 +21,19 @@ pub fn to_binop(self: Token) -> Option[BinaryOp] {
     Star => Some(Mul)
     Slash => Some(Div)
     Percent => Some(Rem)
-    Ampersand => Some(And)
-    Pipe => Some(Or)
-    Caret => Some(Xor)
+    Ampersand => Some(BitwiseAnd)
+    Pipe => Some(BitwiseOr)
+    Caret => Some(BitwiseXor)
     Lshift => Some(Shl)
     Rshift => Some(Shr)
+    EqualEqual => Some(Equ)
+    BangEqual => Some(Neq)
+    Less => Some(Lss)
+    Greater => Some(Gtr)
+    LessEqual => Some(Leq)
+    GreaterEqual => Some(Geq)
+    AmpersandAmpersand => Some(LogicalAnd)
+    PipePipe => Some(LogicalOr)
     _ => None
   }
 }
@@ -46,6 +57,15 @@ pub impl Show for Token with output(self, logger: Logger) {
     Lshift => "<<"
     Rshift => ">>"
     Tilde => "~"
+    Bang => "!"
+    AmpersandAmpersand => "&&"
+    PipePipe => "||"
+    EqualEqual => "=="
+    BangEqual => "!="
+    Less => "<"
+    Greater => ">"
+    LessEqual => "<="
+    GreaterEqual => ">="
     Int => "int"
     Return => "return"
     Void => "void"

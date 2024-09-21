@@ -41,11 +41,23 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst {
       let dst = self.rewrite_operand(dst)
       Binary(~op, ~src, ~dst)
     }
+    Cmp(~src, ~dst) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Cmp(~src, ~dst)
+    }
     IDiv(~src) => {
       let src = self.rewrite_operand(src)
       IDiv(~src)
     }
     Cdq => Cdq
+    Jmp(target) => Jmp(target)
+    JmpCond(~cond, ~target) => JmpCond(~cond, ~target)
+    SetCond(~cond, ~dst) => {
+      let dst = self.rewrite_operand(dst)
+      SetCond(~cond, ~dst)
+    }
+    Label(name) => Label(name)
     AllocateStack(~size) => AllocateStack(~size)
     Ret => Ret
   }

@@ -8,6 +8,11 @@ pub enum TacInst {
   Return(TacValue)
   Unary(~op: UnaryOp, ~src: TacValue, ~dst: TacValue)
   Binary(~op: BinaryOp, ~lhs: TacValue, ~rhs: TacValue, ~dst: TacValue)
+  Copy(~src: TacValue, ~dst: TacValue)
+  Jump(String)
+  JumpIfZero(~cond: TacValue, ~target: String)
+  JumpIfNotZero(~cond: TacValue, ~target: String)
+  Label(String)
 } derive(Show)
 
 pub struct TacFunctionDef {

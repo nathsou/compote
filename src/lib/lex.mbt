@@ -187,11 +187,19 @@ fn next(self: Lexer) -> LexerResult {
     }
     '&' => {
       self.advance()
-      Ok(Ampersand)
+      if self.consumes('&') {
+        Ok(AmpersandAmpersand)
+      } else {
+        Ok(Ampersand)
+      }
     }
     '|' => {
       self.advance()
-      Ok(Pipe)
+      if self.consumes('|') {
+        Ok(PipePipe)
+      } else {
+        Ok(Pipe)
+      }
     }
     '^' => {
       self.advance()
@@ -201,21 +209,41 @@ fn next(self: Lexer) -> LexerResult {
       self.advance()
       if self.consumes('<') {
         Ok(Lshift)
+      } else if self.consumes('=') {
+        Ok(LessEqual)
       } else {
-        Err(UnexepectedChar('<'))
+        Ok(Less)
       }
     }
     '>' => {
       self.advance()
       if self.consumes('>') {
         Ok(Rshift)
+      } else if self.consumes('=') {
+        Ok(GreaterEqual)
       } else {
-        Err(UnexepectedChar('>'))
+        Ok(Greater)
       }
     }
     '~' => {
       self.advance()
       Ok(Tilde)
+    }
+    '!' => {
+      self.advance()
+      if self.consumes('=') {
+        Ok(BangEqual)
+      } else {
+        Ok(Bang)
+      }
+    }
+    '=' => {
+      self.advance()
+      if self.consumes('=') {
+        Ok(EqualEqual)
+      } else {
+        Err(UnexepectedChar('='))
+      }
     }
     _ => {
       if is_digit(char) {
