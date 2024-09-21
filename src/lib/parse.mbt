@@ -111,12 +111,12 @@ fn parse_factor(self: Parser) -> Expr!ParserError {
     }
     Minus => {
       self.advance()
-      let expr = self.parse_expr!()
+      let expr = self.parse_factor!()
       Unary(~op=Neg, ~expr)
     }
     Tilde => {
       self.advance()
-      let expr = self.parse_expr!()
+      let expr = self.parse_factor!()
       Unary(~op=Not, ~expr)
     }
     Lparen => {

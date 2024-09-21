@@ -18,3 +18,19 @@ pub struct TacFunctionDef {
 pub struct TacProgram {
   functions: Array[TacFunctionDef]
 }
+
+pub impl Show for TacProgram with output(self, logger: Logger) {
+  for function in self.functions {
+    logger.write_string("function ")
+    logger.write_string(function.name)
+    logger.write_string("() {\n")
+    
+    for inst in function.body {
+      logger.write_string("  ")
+      logger.write_string(Show::to_string(inst))
+      logger.write_string("\n")
+    }
+    
+    logger.write_string("}\n")
+  }
+}

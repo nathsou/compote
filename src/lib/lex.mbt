@@ -148,6 +148,15 @@ fn next(self: Lexer) -> LexerResult {
     }
     '/' => {
       self.advance()
+      // skip comments
+      if self.consumes('/') {
+        while self.peek() != '\n' {
+          self.advance()
+        }
+        
+        return self.next()
+      }
+
       Ok(Slash)
     }
     '%' => {

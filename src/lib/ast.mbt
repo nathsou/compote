@@ -33,7 +33,6 @@ pub enum BinaryOp {
   Add; Sub; Mul; Div; Rem
 } derive(Eq)
 
-// see https://en.cppreference.com/w/c/language/operator_precedence
 pub fn precedence(self: BinaryOp) -> Int {
   match self {
     Mul | Div | Rem => 50
@@ -77,7 +76,7 @@ pub impl Show for Expr with output(self, logger: Logger) {
       logger.write_string(")")
     }
     Binary(~op, ~lhs, ~rhs) => {
-      logger.write_string("\{Show::to_string(lhs)} \{Show::to_string(op)} \{Show::to_string(rhs)}")
+      logger.write_string("(\{Show::to_string(lhs)} \{Show::to_string(op)} \{Show::to_string(rhs)})")
     }
   }
 }
@@ -100,5 +99,12 @@ pub impl Show for Decl with output(self, logger: Logger) {
       logger.write_string(Show::to_string(body))
       logger.write_string(" }")
     }
+  }
+}
+
+pub impl Show for Program with output(self, logger: Logger) {
+  for decl in self.decls {
+    logger.write_string(Show::to_string(decl))
+    logger.write_char('\n')
   }
 }
