@@ -3,16 +3,22 @@ pub type FixUpPass Unit
 
 fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
   match inst {
-     // mov, add, sub instructions with stack addresses as both operands are invalid
+     // some instructions with stack addresses as both operands are invalid
     Mov(~src=Stack(src), ~dst=Stack(dst)) => [
       Mov(~src=Stack(src), ~dst=Reg(R10)),
       Mov(~src=Reg(R10), ~dst=Stack(dst)),
     ]
-    Binary(~op=Add | Sub as op, ~src=Stack(src), ~dst=Stack(dst)) => [
+    Binary(~op=Add | Sub | And | Or | Xor as op, ~src=Stack(src), ~dst=Stack(dst)) => [
       Mov(~src=Stack(src), ~dst=Reg(R10)),
       Binary(~op, ~src=Reg(R10), ~dst=Stack(dst)),
     ]
-    // imul can't use a memory address as its destination
+    Binary(~op=Shl | Sal, ~src=Imm(_), ~dst=_) => [inst]
+    // The shift amount must be stored in the cl register
+    Binary(~op=Shl | Sal as op, ~src, ~dst) => [
+      Mov(~src, ~dst=Reg(ECX)),
+      Binary(~op, ~src=Reg(CL), ~dst),
+    ]
+    // imul can't use a memory address as destination
     Binary(~op=Mul, ~src, ~dst=Stack(dst)) => [
       Mov(~src=Stack(dst), ~dst=Reg(R11)),
       Binary(~op=Mul, ~src, ~dst=Reg(R11)),

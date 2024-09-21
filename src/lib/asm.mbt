@@ -1,6 +1,6 @@
 
 pub enum AsmReg {
-  AX; DX; R10; R11
+  AX; DX; R10; R11; ECX; CL
 }
 
 pub enum AsmOperand {
@@ -16,6 +16,8 @@ pub enum AsmUnaryOp {
 
 pub enum AsmBinaryOp {
   Add; Sub; Mul
+  And; Or; Xor
+  Shl; Sal
 }
 
 pub enum AsmInst {

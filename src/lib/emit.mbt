@@ -53,6 +53,8 @@ fn asm(self: AsmOperand) -> String!EmitterError {
       DX => "%edx"
       R10 => "%r10d"
       R11 => "%r11d"
+      ECX => "%ecx"
+      CL => "%cl"
     }
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
@@ -71,6 +73,11 @@ fn asm(self: AsmBinaryOp) -> String {
     Add => "addl"
     Sub => "subl"
     Mul => "imul"
+    Shl => "shll"
+    Sal => "sarl"
+    And => "andl"
+    Or => "orl"
+    Xor => "xorl"
   }
 }
 

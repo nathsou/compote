@@ -27,6 +27,11 @@ fn asm(self: BinaryOp) -> AsmBinaryOp!AsmBuilderError {
     Add => Add
     Sub => Sub
     Mul => Mul
+    And => And
+    Or => Or
+    Xor => Xor
+    Shl => Shl
+    Shr => Sal
     Div | Rem => raise UnreachableBinaryOpConversion(self)
   }
 }

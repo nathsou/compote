@@ -3,7 +3,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { exec } from 'child_process';
 
-const ASSEMBLER = 'gcc';
+// driver used to preprocess C files and assemble the generated assembly code
+const CC = 'clang';
 
 // --lex: Directs it to run the lexer, but stop before parsing
 // --parse: Directs it to run the lexer and parser, but stop before assembly generation
@@ -46,7 +47,7 @@ function assemble(assemblyCode, directory, fileName) {
     writeFileSync(tmpFile, assemblyCode);
 
     // Construct the GCC command
-    const gccCommand = `${ASSEMBLER} ${tmpFile} -o ${outputFile}`;
+    const gccCommand = `${CC} ${tmpFile} -o ${outputFile}`;
 
     // Execute GCC
     exec(gccCommand, (error, _stdout, stderr) => {
@@ -54,17 +55,46 @@ function assemble(assemblyCode, directory, fileName) {
       unlinkSync(tmpFile);
 
       if (error) {
-        reject(`${ASSEMBLER} Error: ${error.message}`);
+        reject(`${CC} Error: ${error.message}`);
         return;
       }
 
       if (stderr) {
-        reject(`${ASSEMBLER} stderr: ${stderr}`);
+        reject(`${CC} stderr: ${stderr}`);
         return;
       }
 
       // If successful, resolve with the path to the output file
       resolve(outputFile);
+    });
+  });
+}
+
+// use the C preprocessor to preprocess the source code
+function preprocess(prog) {
+  return new Promise((resolve, reject) => {
+    const tmpDir = os.tmpdir();
+    const tmpFile = path.join(tmpDir, 'preprocessed.c');
+
+    writeFileSync(tmpFile, prog);
+
+    const cmd = `${CC} -E -P ${sourceFile} -o ${tmpFile}`;
+
+    exec(cmd, (error, _stdout, stderr) => {
+      const preprocessed = readFileSync(tmpFile, 'utf8');
+      unlinkSync(tmpFile);
+
+      if (error) {
+        reject(`${CC} Error: ${error.message}`);
+        return;
+      }
+
+      if (stderr) {
+        reject(`${CC} stderr: ${stderr}`);
+        return;
+      }
+
+      resolve(preprocessed);
     });
   });
 }
@@ -168,7 +198,7 @@ if (flags.has('lex')) {
     if (asm.ok) {
       const fileName = path.basename(sourceFile, path.extname(sourceFile));
       const filePath = path.dirname(sourceFile);
-  
+
       if (flags.has('S')) {
         const asmFile = path.join(filePath, fileName + '.s');
         writeFileSync(asmFile, asm.value, 'utf8');
@@ -188,34 +218,37 @@ if (flags.has('lex')) {
   };
 }
 
-const { log, flush, outputChar } = createImports(outputCallback);
+async function main() {
+  const preprocessed = await preprocess(prog);
+  const { log, flush, outputChar } = createImports(outputCallback);
 
-const importObject = {
-  spectest: {
-    print_char: log,
-  },
-  host: {
-    read_source_file_char: index => {
-      if (index >= prog.length) {
-        return 0;
-      }
-
-      return prog.charCodeAt(index);
+  const importObject = {
+    spectest: {
+      print_char: log,
     },
-    get_source_file_length: () => prog.length,
-    output_char: outputChar,
-  },
-};
+    host: {
+      read_source_file_char: index => {
+        if (index >= preprocessed.length) {
+          return 0;
+        }
 
-WebAssembly.instantiate(wasmBuffer, importObject).then(
-  (obj) => {
-    if ('_start' in obj.instance.exports) {
-      obj.instance.exports._start();
-    }
+        return preprocessed.charCodeAt(index);
+      },
+      get_source_file_length: () => preprocessed.length,
+      output_char: outputChar,
+    },
+  };
 
-    const { drive } = obj.instance.exports;
+  const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
 
-    drive(stage, os_);
-    flush();
-  },
-);
+  if ('_start' in instance.exports) {
+    instance.exports._start();
+  }
+
+  const { drive } = instance.exports;
+
+  drive(stage, os_);
+  flush();
+}
+
+main();

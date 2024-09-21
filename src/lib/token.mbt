@@ -2,6 +2,7 @@
 pub enum Token {
   // symbols
   Lparen; Rparen; Lbrace; Rbrace; Comma; Semicolon; Plus; Minus; Star; Slash; Percent; Tilde
+  Ampersand; Pipe; Caret; Lshift; Rshift
   // keywords
   Int; Return; Void
   // literals
@@ -17,6 +18,11 @@ pub fn to_binop(self: Token) -> Option[BinaryOp] {
     Star => Some(Mul)
     Slash => Some(Div)
     Percent => Some(Rem)
+    Ampersand => Some(And)
+    Pipe => Some(Or)
+    Caret => Some(Xor)
+    Lshift => Some(Shl)
+    Rshift => Some(Shr)
     _ => None
   }
 }
@@ -34,6 +40,11 @@ pub impl Show for Token with output(self, logger: Logger) {
     Star => "*"
     Slash => "/"
     Percent => "%"
+    Ampersand => "&"
+    Pipe => "|"
+    Caret => "^"
+    Lshift => "<<"
+    Rshift => ">>"
     Tilde => "~"
     Int => "int"
     Return => "return"

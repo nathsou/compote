@@ -31,12 +31,18 @@ pub enum UnaryOp {
 
 pub enum BinaryOp {
   Add; Sub; Mul; Div; Rem
+  And; Or; Xor; Shl; Shr
 } derive(Eq)
 
+// https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
 pub fn precedence(self: BinaryOp) -> Int {
   match self {
     Mul | Div | Rem => 50
     Add | Sub => 45
+    Shl | Shr => 40
+    And => 35
+    Xor => 30
+    Or => 25
   }
 }
 
@@ -61,6 +67,11 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
     Mul => "*"
     Div => "/"
     Rem => "%"
+    And => "&"
+    Or => "|"
+    Xor => "^"
+    Shl => "<<"
+    Shr => ">>"
   })
 }
 

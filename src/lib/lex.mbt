@@ -38,8 +38,22 @@ fn peek(self: Lexer) -> Char {
   self.input[self.index]
 }
 
+fn lookahead(self: Lexer, n: Int) -> Char {
+  self.input[self.index + n]
+}
+
 fn matches(self: Lexer, char: Char) -> Bool {
   self.peek() == char
+}
+
+fn matches_str(self: Lexer, chars: String) -> Bool {
+  for i, char in chars {
+    if self.lookahead(i) != char {
+      return false
+    }
+  }
+
+  true
 }
 
 fn consumes(self: Lexer, char: Char) -> Bool {
@@ -155,6 +169,14 @@ fn next(self: Lexer) -> LexerResult {
         }
         
         return self.next()
+      } else if self.consumes('*') {
+        while not(self.matches_str("*/")) {
+          self.advance()
+        }
+
+        self.index += 2 // skip "*/"
+
+        return self.next()
       }
 
       Ok(Slash)
@@ -162,6 +184,34 @@ fn next(self: Lexer) -> LexerResult {
     '%' => {
       self.advance()
       Ok(Percent)
+    }
+    '&' => {
+      self.advance()
+      Ok(Ampersand)
+    }
+    '|' => {
+      self.advance()
+      Ok(Pipe)
+    }
+    '^' => {
+      self.advance()
+      Ok(Caret)
+    }
+    '<' => {
+      self.advance()
+      if self.consumes('<') {
+        Ok(Lshift)
+      } else {
+        Err(UnexepectedChar('<'))
+      }
+    }
+    '>' => {
+      self.advance()
+      if self.consumes('>') {
+        Ok(Rshift)
+      } else {
+        Err(UnexepectedChar('>'))
+      }
     }
     '~' => {
       self.advance()
