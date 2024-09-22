@@ -1,0 +1,8 @@
+[package]
+name = "compote"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = "2.33.3"
+wasmtime = "0.32.0"
