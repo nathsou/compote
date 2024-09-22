@@ -8,6 +8,7 @@ const CC = 'clang';
 
 // --lex: Directs it to run the lexer, but stop before parsing
 // --parse: Directs it to run the lexer and parser, but stop before assembly generation
+// --validate: Directs it to run the lexer, parser, and validation, but stop before TAC code generation
 // --tacky: Directs it to run the lexer, parser, and three-address code generation, but stop before assembly generation
 // --codegen: Directs it to perform lexing, parsing, and assembly generation, but stop before code emission
 
@@ -99,7 +100,7 @@ function preprocess(prog) {
   });
 }
 
-const WASM_FILE = path.join(__dirname, '../target/wasm/release/build/lib/lib.wasm');
+const WASM_FILE = path.join(__dirname, '../target/wasm/release/build/driver/driver.wasm');
 
 if (!existsSync(WASM_FILE)) {
   console.error(`Error: WebAssembly file ${WASM_FILE} not found`);
@@ -151,8 +152,9 @@ function parseResult(result) {
 const driverStage = {
   lex: 0,
   parse: 1,
-  tacky: 2,
-  codegen: 3,
+  validate: 2,
+  tacky: 3,
+  codegen: 4,
 };
 
 const operatingSystem = {
@@ -177,6 +179,8 @@ if (flags.has('lex')) {
   stage = driverStage.lex;
 } else if (flags.has('parse')) {
   stage = driverStage.parse;
+} else if (flags.has('validate')) {
+  stage = driverStage.validate;
 } else if (flags.has('tacky')) {
   stage = driverStage.tacky;
 } else {

@@ -5,24 +5,35 @@ pub enum Type {
 
 pub enum Expr {
   Constant(Int)
+  Variable(String)
   Unary(~op: UnaryOp, ~expr: Expr)
   Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr)
+  Assignment(~lhs: Expr, ~rhs: Expr)
 }
 
 pub enum Stmt {
   Return(Expr)
+  Expression(Expr)
+  Null // for empty statements (just a semicolon)
+}
+
+pub enum BlockItem {
+  Stmt(Stmt)
+  Decl(Decl)
+}
+
+pub struct FunctionDef {
+  return_type: Type
+  name: String
+  body: Array[BlockItem]
 }
 
 pub enum Decl {
-  Function(~returnType: Type, ~name: String, ~body: Stmt)
+  VariableDecl(~ty: Type, ~name: String, ~value: Option[Expr])
 }
 
 pub struct Program {
-  decls: Array[Decl]
-}
-
-pub fn Program::new(decls: Array[Decl]) -> Program {
-  { decls, }
+  functions: Array[FunctionDef]
 }
 
 pub enum UnaryOp {
@@ -35,6 +46,7 @@ pub enum BinaryOp {
   Shl; Shr
   Equ; Neq; Lss; Leq; Gtr; Geq
   LogicalAnd; LogicalOr
+  Assign
 } derive(Eq)
 
 // https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
@@ -50,6 +62,7 @@ pub fn precedence(self: BinaryOp) -> Int {
     BitwiseOr => 20
     LogicalAnd => 10
     LogicalOr => 5
+    Assign => 1
   }
 }
 
@@ -88,6 +101,7 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
     Geq => ">="
     LogicalAnd => "&&"
     LogicalOr => "||"
+    Assign => "="
   })
 }
 
@@ -95,6 +109,9 @@ pub impl Show for Expr with output(self, logger: Logger) {
   match self {
     Constant(n) => {
       logger.write_string(n.to_string())
+    }
+    Variable(name) => {
+      logger.write_string(name)
     }
     Unary(~op, ~expr) => {
       logger.write_string(Show::to_string(op))
@@ -105,6 +122,9 @@ pub impl Show for Expr with output(self, logger: Logger) {
     Binary(~op, ~lhs, ~rhs) => {
       logger.write_string("(\{Show::to_string(lhs)} \{Show::to_string(op)} \{Show::to_string(rhs)})")
     }
+    Assignment(~lhs, ~rhs) => {
+      logger.write_string("\{Show::to_string(lhs)} = \{Show::to_string(rhs)}")
+    }
   }
 }
 
@@ -113,25 +133,58 @@ pub impl Show for Stmt with output(self, logger: Logger) {
     Return(expr) => {
       logger.write_string("return \{Show::to_string(expr)};")
     }
+    Expression(expr) => {
+      logger.write_string("\{Show::to_string(expr)};")
+    }
+    Null => {
+      logger.write_string(";")
+    }
   }
 }
 
 pub impl Show for Decl with output(self, logger: Logger) {
   match self {
-    Function(~returnType, ~name, ~body) => {
-      logger.write_string(Show::to_string(returnType))
+    VariableDecl(~ty, ~name, ~value) => {
+      logger.write_string(Show::to_string(ty))
       logger.write_string(" ")
       logger.write_string(name)
-      logger.write_string("(void) { ")
-      logger.write_string(Show::to_string(body))
-      logger.write_string(" }")
+
+      match value {
+        Some(expr) => {
+          logger.write_string(" = ")
+          logger.write_string(Show::to_string(expr))
+        }
+        None => ()
+      }
+
+      logger.write_string(";")
     }
   }
 }
 
+pub impl Show for BlockItem with output(self, logger: Logger) {
+  match self {
+    Stmt(stmt) => {
+      logger.write_string(Show::to_string(stmt))
+    }
+    Decl(decl) => {
+      logger.write_string(Show::to_string(decl))
+    }
+  }
+}
+
+pub impl Show for FunctionDef with output(self, logger: Logger) {
+    logger.write_string(Show::to_string(self.return_type))
+    logger.write_string(" ")
+    logger.write_string(self.name)
+    logger.write_string("(void) {\n")
+    logger.write_string(self.body.join("\n"))
+    logger.write_string("\n}")
+}
+
 pub impl Show for Program with output(self, logger: Logger) {
-  for decl in self.decls {
-    logger.write_string(Show::to_string(decl))
-    logger.write_char('\n')
+  for function in self.functions {
+    logger.write_string(Show::to_string(function))
+    logger.write_string("\n")
   }
 }

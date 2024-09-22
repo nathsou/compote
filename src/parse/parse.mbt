@@ -8,7 +8,6 @@ pub type! ParserError {
   ExpectedIdentifier(Token)
   ExpectedType(Token)
   ExpectedExpr(Token)
-  ExpectedStmt(Token)
 } derive(Show)
 
 pub fn Parser::new(tokens: Array[Token]) -> Parser {
@@ -88,8 +87,17 @@ fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
 
         if precedence >= min_precedence {
           self.advance() // consume the operator
-          let rhs = self.precedence_climbing!(precedence + 1)
-          lhs = Binary(~op=op, ~lhs, ~rhs)
+
+          match op {
+            Assign => { // right-associative
+              let rhs = self.precedence_climbing!(precedence)
+              lhs = Assignment(~lhs, ~rhs)
+            }
+            _ => { // left-associative
+              let rhs = self.precedence_climbing!(precedence + 1)
+              lhs = Binary(~op=op, ~lhs, ~rhs)
+            }
+          }
         } else {
           break
         }
@@ -130,6 +138,10 @@ fn parse_factor(self: Parser) -> Expr!ParserError {
       self.expect!(Rparen)
       expr
     }
+    Identifier(name) => {
+      self.advance()
+      Variable(name)
+    }
     _ => raise ExpectedExpr(token)
   }
 }
@@ -148,34 +160,74 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
       self.expect!(Semicolon)
       Return(expr)
     }
-    _ => raise ExpectedStmt(token)
+    Semicolon => {
+      self.advance()
+      Null
+    }
+    _ => {
+      let expr = self.parse_expr!()
+      self.expect!(Semicolon)
+      Expression(expr)
+    }
   }
 }
 
-fn parse_function_decl(self: Parser) -> Decl!ParserError {
-  let returnType = self.parse_type!()
+fn parse_block_item(self: Parser) -> BlockItem!ParserError {
+  match self.peek() {
+    Int => Decl(self.parse_decl!())
+    _ => Stmt(self.parse_stmt!())
+  }
+}
+
+fn parse_variable_decl(self: Parser) -> Decl!ParserError {
+  let ty = self.parse_type!()
+  let name = self.parse_identifier!()
+  let value = if self.consumes(Equal) {
+    Some(self.parse_expr!())
+  } else {
+    None
+  }
+  self.expect!(Semicolon)
+
+  VariableDecl(~ty, ~name, ~value)
+}
+
+fn parse_decl(self: Parser) -> Decl!ParserError {
+  self.parse_variable_decl!()
+}
+
+fn parse_block(self: Parser) -> Array[BlockItem]!ParserError {
+  let items = []
+
+  self.expect!(Lbrace)
+
+  while not(self.matches(Rbrace)) {
+    items.push(self.parse_block_item!())
+  }
+
+  self.expect!(Rbrace)
+
+  items
+}
+
+fn parse_function_def(self: Parser) -> FunctionDef!ParserError {
+  let return_type = self.parse_type!()
   let name = self.parse_identifier!()
   self.expect!(Lparen)
   self.consumeIfPresent(Void)
   self.expect!(Rparen)
-  self.expect!(Lbrace)
-  let body = self.parse_stmt!()
-  self.expect!(Rbrace)
+  let body = self.parse_block!()
 
-  Function(~returnType, ~name, ~body)
-}
-
-fn parse_decl(self: Parser) -> Decl!ParserError {
-  self.parse_function_decl!()
+  { return_type, name, body }
 }
 
 pub fn parse(self: Parser) -> Program!ParserError {
-  let decls = []
+  let functions = []
 
   while self.index < self.tokens.length() {
-    let decl = self.parse_decl!()
-    decls.push(decl)
+    let decl = self.parse_function_def!()
+    functions.push(decl)
   }
 
-  Program::new(decls)
+  { functions, }
 }

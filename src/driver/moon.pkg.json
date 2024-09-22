@@ -1,0 +1,12 @@
+{
+    "import": [
+        "nathsou/compote/parse",
+        "nathsou/compote/validate",
+        "nathsou/compote/codegen"
+    ],
+    "link": {
+        "wasm": {
+            "exports": ["drive"]
+        }
+    }
+}

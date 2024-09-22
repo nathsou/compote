@@ -6,6 +6,7 @@ pub struct Lexer {
 
 pub type! LexerError {
   UnexepectedChar(Char)
+  InvalidIntegerChar(Char)
 } derive(Show)
 
 fn is_whitespace(c: Char) -> Bool {
@@ -71,7 +72,7 @@ fn skip_whitespaces(self: Lexer) -> Unit {
   }
 }
 
-fn parse_integer(self: Lexer) -> Int {
+fn parse_integer(self: Lexer) -> Int!LexerError {
   let mut value = 0
   
   for i in self.index..<self.input.length() {
@@ -79,6 +80,8 @@ fn parse_integer(self: Lexer) -> Int {
     if is_digit(char) {
       value = value * 10 + (char.to_int() - 48)
       self.advance()
+    } else if is_alpha(char) {
+      raise InvalidIntegerChar(char)
     } else {
       break
     }
@@ -242,13 +245,15 @@ fn next(self: Lexer) -> LexerResult {
       if self.consumes('=') {
         Ok(EqualEqual)
       } else {
-        Err(UnexepectedChar('='))
+        Ok(Equal)
       }
     }
     _ => {
       if is_digit(char) {
-        let value = self.parse_integer()
-        Ok(IntLiteral(value))
+        match self.parse_integer?() {
+          Err(error) => return Err(error)
+          Ok(value) => Ok(IntLiteral(value))
+        }
       } else if is_alpha(char) || char == '_' {
         let identifier = self.parse_identifier()
 

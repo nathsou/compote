@@ -1,9 +1,11 @@
 
 type! CompilerError {
-  Lexer(LexerError)
-  Parser(ParserError)
-  AsmBuilder(AsmBuilderError)
-  Emitter(EmitterError)
+  Lexer(@parse.LexerError)
+  Parser(@parse.ParserError)
+  Validator(@validate.ValidationError)
+  TacBuilder(@codegen.TacBuilderError)
+  AsmBuilder(@codegen.AsmBuilderError)
+  Emitter(@codegen.EmitterError)
 } derive(Show)
 
 fn read_source_file_char(index: Int) -> Char = "host" "read_source_file_char"
@@ -22,8 +24,8 @@ fn read_source_file() -> String {
   chars.join("")
 }
 
-fn lex_stage(source: String) -> Array[Token]!CompilerError {
-  let lexer = Lexer::new(source)
+fn lex_stage(source: String) -> Array[@parse.Token]!CompilerError {
+  let lexer = @parse.Lexer::new(source)
 
   match lexer.lex?() {
     Ok(tokens) => tokens
@@ -31,9 +33,9 @@ fn lex_stage(source: String) -> Array[Token]!CompilerError {
   }
 }
 
-fn parse_stage(source: String) -> Program!CompilerError {
+fn parse_stage(source: String) -> @parse.Program!CompilerError {
   let tokens = lex_stage!(source)
-  let parser = Parser::new(tokens)
+  let parser = @parse.Parser::new(tokens)
 
   match parser.parse?() {
     Ok(program) => program
@@ -41,12 +43,25 @@ fn parse_stage(source: String) -> Program!CompilerError {
   }
 }
 
-fn tac_gen_stage(source: String) -> TacProgram!CompilerError {
+fn validate_stage(source: String) -> @parse.Program!CompilerError {
   let program = parse_stage!(source)
-  convert_prog(program)
+
+  match @validate.validated?(program) {
+    Ok(validated) => validated
+    Err(error) => raise Validator(error)
+  }
 }
 
-fn codegen(source: String) -> AsmProgram!CompilerError {
+fn tac_gen_stage(source: String) -> @codegen.TacProgram!CompilerError {
+  let program = validate_stage!(source)
+
+  match @codegen.convert_prog?(program) {
+    Ok(tac) => tac
+    Err(error) => raise TacBuilder(error)
+  }
+}
+
+fn codegen_stage(source: String) -> @codegen.AsmProgram!CompilerError {
   let program = tac_gen_stage!(source)
   
   match program.asm?() {
@@ -55,9 +70,9 @@ fn codegen(source: String) -> AsmProgram!CompilerError {
   }
 }
 
-fn assemble(source: String, ~os: OperatingSystem) -> String!CompilerError {
-  let program = codegen!(source)
-  let emitter = Emitter::new(os)
+fn assemble(source: String, ~os: @codegen.OperatingSystem) -> String!CompilerError {
+  let program = codegen_stage!(source)
+  let emitter = @codegen.Emitter::new(os)
   match emitter.emit_program?(program) {
     Ok(_) => Show::to_string(emitter)
     Err(error) => raise Emitter(error)
@@ -73,10 +88,10 @@ fn output_string(s: String) -> Unit {
 }
 
 pub enum DriverStage {
-  Lex; Parse; Tacky; CodeGen
+  Lex; Parse; Validate; Tacky; CodeGen
 }
 
-fn compile(stage: DriverStage, os: OperatingSystem) -> String!CompilerError {
+fn compile(stage: DriverStage, os: @codegen.OperatingSystem) -> String!CompilerError {
   let source = read_source_file()
 
   match stage {
@@ -86,6 +101,10 @@ fn compile(stage: DriverStage, os: OperatingSystem) -> String!CompilerError {
     }
     Parse => {
       let program = parse_stage!(source)
+      Show::to_string(program)
+    }
+    Validate => {
+      let program = validate_stage!(source)
       Show::to_string(program)
     }
     Tacky => {
@@ -98,7 +117,7 @@ fn compile(stage: DriverStage, os: OperatingSystem) -> String!CompilerError {
   }
 }
 
-pub fn drive(stage: DriverStage, os: OperatingSystem) -> Unit {
+pub fn drive(stage: DriverStage, os: @codegen.OperatingSystem) -> Unit {
   match compile?(stage, os) {
     Ok(output) => output_string("ok:" + output)
     Err(error) => output_string("err:" + Show::to_string(error))

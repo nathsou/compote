@@ -4,9 +4,9 @@ pub struct AsmBuilder {
 }
 
 pub type! AsmBuilderError {
-  UneachableUnaryOpConversion(UnaryOp)
-  UnreachableBinaryOpConversion(BinaryOp)
-  UnreachableCondCodeConversion(BinaryOp)
+  UneachableUnaryOpConversion(@parse.UnaryOp)
+  UnreachableBinaryOpConversion(@parse.BinaryOp)
+  UnreachableCondCodeConversion(@parse.BinaryOp)
 } derive(Show)
 
 pub fn AsmBuilder::new() -> AsmBuilder {
@@ -17,16 +17,16 @@ fn emit(self: AsmBuilder, inst: AsmInst) -> Unit {
   self.instructions.push(inst)
 }
 
-fn asm(self: UnaryOp) -> AsmUnaryOp!AsmBuilderError {
-  match self {
+fn convert_unary_op(op: @parse.UnaryOp) -> AsmUnaryOp!AsmBuilderError {
+  match op {
     Neg => Neg
     Complement => BitwiseNot
-    Not => raise UneachableUnaryOpConversion(self)
+    Not => raise UneachableUnaryOpConversion(op)
   }
 }
 
-fn asm(self: BinaryOp) -> AsmBinaryOp!AsmBuilderError {
-  match self {
+fn convert_binary_op(op: @parse.BinaryOp) -> AsmBinaryOp!AsmBuilderError {
+  match op {
     Add => Add
     Sub => Sub
     Mul => Mul
@@ -35,19 +35,21 @@ fn asm(self: BinaryOp) -> AsmBinaryOp!AsmBuilderError {
     BitwiseXor => Xor
     Shl => Shl
     Shr => Sal
-    Div | Rem | Equ | Neq | Lss | Leq | Gtr | Geq | LogicalAnd | LogicalOr => raise UnreachableBinaryOpConversion(self)
+    Div | Rem | Equ | Neq | Lss | Leq | Gtr | Geq | LogicalAnd | LogicalOr | Assign => {
+      raise UnreachableBinaryOpConversion(op)
+    }
   }
 }
 
-fn to_cond_code(self: BinaryOp) -> CondCode!AsmBuilderError {
-  match self {
+fn convert_cond_code(op: @parse.BinaryOp) -> CondCode!AsmBuilderError {
+  match op {
     Equ => Eq
     Neq => Ne
     Lss => Lt
     Leq => Le
     Gtr => Gt
     Geq => Ge
-    _ => raise UnreachableCondCodeConversion(self)
+    _ => raise UnreachableCondCodeConversion(op)
   }
 }
 
@@ -77,7 +79,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
       let src = src.asm()
       let dst = dst.asm()
       self.emit(Mov(~src, ~dst))
-      self.emit(Unary(~op=op.asm!(), ~dst))
+      self.emit(Unary(~op=convert_unary_op!(op), ~dst))
     }
     Binary(~op=Lss | Leq | Gtr | Geq | Equ | Neq as op, ~lhs, ~rhs, ~dst) => {
       let lhs = lhs.asm()
@@ -86,7 +88,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
       self.emit(Cmp(~src=rhs, ~dst=lhs))
       // clear the destination register before the set instruction
       self.emit(Mov(~src=Imm(0), ~dst))
-      self.emit(SetCond(~cond=op.to_cond_code!(), ~dst))
+      self.emit(SetCond(~cond=convert_cond_code!(op), ~dst))
     }
     Binary(~op, ~lhs, ~rhs, ~dst) => {
       let lhs = lhs.asm()
@@ -103,7 +105,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
         }
         _ => {
           self.emit(Mov(~src=lhs, ~dst))
-          self.emit(Binary(~op=op.asm!(), ~src=rhs, ~dst))
+          self.emit(Binary(~op=convert_binary_op!(op), ~src=rhs, ~dst))
         }
       }
     }
