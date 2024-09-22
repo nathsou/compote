@@ -21,7 +21,7 @@ fn convert_unary_op(op: @parse.UnaryOp) -> AsmUnaryOp!AsmBuilderError {
   match op {
     Neg => Neg
     Complement => BitwiseNot
-    Not => raise UneachableUnaryOpConversion(op)
+    Not | Dec(_) | Inc(_) => raise UneachableUnaryOpConversion(op)
   }
 }
 
@@ -35,7 +35,8 @@ fn convert_binary_op(op: @parse.BinaryOp) -> AsmBinaryOp!AsmBuilderError {
     BitwiseXor => Xor
     Shl => Shl
     Shr => Sal
-    Div | Rem | Equ | Neq | Lss | Leq | Gtr | Geq | LogicalAnd | LogicalOr | Assign => {
+    Div | Rem | Equ | Neq | Lss | Leq | Gtr | Geq |
+    LogicalAnd | LogicalOr | Assignment(_) => {
       raise UnreachableBinaryOpConversion(op)
     }
   }

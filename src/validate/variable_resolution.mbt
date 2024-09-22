@@ -13,6 +13,13 @@ pub type! VariableResolutionError {
   InvalidLvalue(String)
 } derive(Show)
 
+fn is_lvalue(expr: @parse.Expr) -> Bool {
+  match expr {
+    Variable(_) => true
+    _ => false
+  }
+}
+
 fn resolve_expr(self: VariableResolutionPass, decl: @parse.Expr, scope: Map[String, String]) -> @parse.Expr!VariableResolutionError {
   match decl {
     Variable(name) => {
@@ -22,15 +29,25 @@ fn resolve_expr(self: VariableResolutionPass, decl: @parse.Expr, scope: Map[Stri
       }
     }
     Constant(n) => @parse.Constant(n)
-    Unary(~op, ~expr) => @parse.Unary(~op, ~expr=self.resolve_expr!(expr, scope))
-    Binary(~op, ~lhs, ~rhs) => @parse.Binary(~op, ~lhs=self.resolve_expr!(lhs, scope), ~rhs=self.resolve_expr!(rhs, scope))
-    Assignment(~lhs, ~rhs) => {
-      match lhs {
-        Variable(_) => ()
-        _ => raise InvalidLvalue(Show::to_string(lhs))
+    Unary(~op, ~expr) => {
+      match op {
+        Inc(_) | Dec(_) => {
+          if not(is_lvalue(expr)) {
+            raise InvalidLvalue(Show::to_string(expr))
+          }
+        }
+        _ => ()
       }
 
-      @parse.Assignment(~lhs=self.resolve_expr!(lhs, scope), ~rhs=self.resolve_expr!(rhs, scope))
+      @parse.Unary(~op, ~expr=self.resolve_expr!(expr, scope))
+    }
+    Binary(~op, ~lhs, ~rhs) => @parse.Binary(~op, ~lhs=self.resolve_expr!(lhs, scope), ~rhs=self.resolve_expr!(rhs, scope))
+    Assignment(~op, ~lhs, ~rhs) => {
+      if not(is_lvalue(lhs)) {
+        raise InvalidLvalue(Show::to_string(lhs))
+      }
+
+      @parse.Expr::Assignment(~op, ~lhs=self.resolve_expr!(lhs, scope), ~rhs=self.resolve_expr!(rhs, scope))
     }
   }
 }

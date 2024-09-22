@@ -1,1 +1,1 @@
-moon build --target wasm && bun build src/main.mjs --compile --outfile compote
+moon build --target wasm

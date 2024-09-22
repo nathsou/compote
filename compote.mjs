@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -100,7 +101,7 @@ function preprocess(prog) {
   });
 }
 
-const WASM_FILE = path.join(__dirname, '../target/wasm/release/build/driver/driver.wasm');
+const WASM_FILE = path.join(import.meta.dirname, './target/wasm/release/build/driver/driver.wasm');
 
 if (!existsSync(WASM_FILE)) {
   console.error(`Error: WebAssembly file ${WASM_FILE} not found`);

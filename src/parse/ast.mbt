@@ -8,7 +8,7 @@ pub enum Expr {
   Variable(String)
   Unary(~op: UnaryOp, ~expr: Expr)
   Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr)
-  Assignment(~lhs: Expr, ~rhs: Expr)
+  Assignment(~op: AssignmentOp, ~lhs: Expr, ~rhs: Expr)
 }
 
 pub enum Stmt {
@@ -37,7 +37,7 @@ pub struct Program {
 }
 
 pub enum UnaryOp {
-  Neg; Complement; Not
+  Neg; Complement; Not; Inc(~is_prefix: Bool); Dec(~is_prefix: Bool)
 } derive(Eq)
 
 pub enum BinaryOp {
@@ -46,7 +46,12 @@ pub enum BinaryOp {
   Shl; Shr
   Equ; Neq; Lss; Leq; Gtr; Geq
   LogicalAnd; LogicalOr
-  Assign
+  Assignment(AssignmentOp)
+} derive(Eq)
+
+pub enum AssignmentOp {
+  Assign; AssignAdd; AssignSub; AssignMul; AssignDiv; AssignRem
+  AssignAnd; AssignOr; AssignXor; AssignShl; AssignShr
 } derive(Eq)
 
 // https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
@@ -57,12 +62,12 @@ pub fn precedence(self: BinaryOp) -> Int {
     Shl | Shr => 40
     Lss | Leq | Gtr | Geq => 35
     Equ | Neq => 30
-    BitwiseAnd => 30
+    BitwiseAnd => 28
     BitwiseXor => 25
     BitwiseOr => 20
     LogicalAnd => 10
     LogicalOr => 5
-    Assign => 1
+    Assignment(_) => 1
   }
 }
 
@@ -78,6 +83,24 @@ pub impl Show for UnaryOp with output(self, logger: Logger) {
     Neg => "-"
     Complement => "~"
     Not => "!"
+    Inc(_) => "++"
+    Dec(_) => "--" 
+  })
+}
+
+pub impl Show for AssignmentOp with output(self, logger: Logger) {
+  logger.write_string(match self {
+    Assign => "="
+    AssignAdd => "+="
+    AssignSub => "-="
+    AssignMul => "*="
+    AssignDiv => "/="
+    AssignRem => "%="
+    AssignAnd => "&="
+    AssignOr => "|="
+    AssignXor => "^="
+    AssignShl => "<<="
+    AssignShr => ">>="
   })
 }
 
@@ -101,7 +124,7 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
     Geq => ">="
     LogicalAnd => "&&"
     LogicalOr => "||"
-    Assign => "="
+    Assignment(op) => Show::to_string(op)
   })
 }
 
@@ -114,16 +137,28 @@ pub impl Show for Expr with output(self, logger: Logger) {
       logger.write_string(name)
     }
     Unary(~op, ~expr) => {
-      logger.write_string(Show::to_string(op))
-      logger.write_string("(")
-      logger.write_string(Show::to_string(expr))
-      logger.write_string(")")
+      match op {
+        Inc(~is_prefix=true) => {
+          logger.write_string("++")
+          logger.write_string(Show::to_string(expr))
+        }
+        Dec(~is_prefix=true) => {
+          logger.write_string("--")
+          logger.write_string(Show::to_string(expr))
+        }
+        _ => {
+          logger.write_string(Show::to_string(op))
+          logger.write_string("(")
+          logger.write_string(Show::to_string(expr))
+          logger.write_string(")")
+        }
+      }
     }
     Binary(~op, ~lhs, ~rhs) => {
       logger.write_string("(\{Show::to_string(lhs)} \{Show::to_string(op)} \{Show::to_string(rhs)})")
     }
-    Assignment(~lhs, ~rhs) => {
-      logger.write_string("\{Show::to_string(lhs)} = \{Show::to_string(rhs)}")
+    Assignment(~op, ~lhs, ~rhs) => {
+      logger.write_string("\{Show::to_string(lhs)} \{Show::to_string(op)} \{Show::to_string(rhs)}")
     }
   }
 }

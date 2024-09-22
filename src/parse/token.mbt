@@ -6,7 +6,9 @@ pub enum Token {
   AmpersandAmpersand; PipePipe; EqualEqual; BangEqual
   Less; Greater; LessEqual; GreaterEqual
   Ampersand; Pipe; Caret; Lshift; Rshift
-  Equal
+  Equal; PlusEqual; MinusEqual; StarEqual; SlashEqual; PercentEqual
+  AmpersandEqual; PipeEqual; CaretEqual; LshiftEqual; RshiftEqual
+  PlusPlus; MinusMinus
   // keywords
   Int; Return; Void
   // literals
@@ -35,7 +37,17 @@ pub fn to_binop(self: Token) -> Option[BinaryOp] {
     GreaterEqual => Some(Geq)
     AmpersandAmpersand => Some(LogicalAnd)
     PipePipe => Some(LogicalOr)
-    Equal => Some(Assign)
+    Equal => Some(Assignment(Assign))
+    PlusEqual => Some(Assignment(AssignAdd))
+    MinusEqual => Some(Assignment(AssignSub))
+    StarEqual => Some(Assignment(AssignMul))
+    SlashEqual => Some(Assignment(AssignDiv))
+    PercentEqual => Some(Assignment(AssignRem))
+    AmpersandEqual => Some(Assignment(AssignAnd))
+    PipeEqual => Some(Assignment(AssignOr))
+    CaretEqual => Some(Assignment(AssignXor))
+    LshiftEqual => Some(Assignment(AssignShl))
+    RshiftEqual => Some(Assignment(AssignShr))
     _ => None
   }
 }
@@ -69,6 +81,18 @@ pub impl Show for Token with output(self, logger: Logger) {
     LessEqual => "<="
     GreaterEqual => ">="
     Equal => "="
+    PlusEqual => "+="
+    MinusEqual => "-="
+    StarEqual => "*="
+    SlashEqual => "/="
+    PercentEqual => "%="
+    AmpersandEqual => "&="
+    PipeEqual => "|="
+    CaretEqual => "^="
+    LshiftEqual => "<<="
+    RshiftEqual => ">>="
+    PlusPlus => "++"
+    MinusMinus => "--"
     Int => "int"
     Return => "return"
     Void => "void"

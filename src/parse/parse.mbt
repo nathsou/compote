@@ -89,9 +89,9 @@ fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
           self.advance() // consume the operator
 
           match op {
-            Assign => { // right-associative
+            Assignment(assignment_op) => { // right-associative
               let rhs = self.precedence_climbing!(precedence)
-              lhs = Assignment(~lhs, ~rhs)
+              lhs = Assignment(~op=assignment_op, ~lhs, ~rhs)
             }
             _ => { // left-associative
               let rhs = self.precedence_climbing!(precedence + 1)
@@ -109,7 +109,7 @@ fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
   lhs
 }
 
-fn parse_factor(self: Parser) -> Expr!ParserError {
+fn parse_primary_expr(self: Parser) -> Expr!ParserError {
   let token = self.peek()
 
   match token {
@@ -117,6 +117,44 @@ fn parse_factor(self: Parser) -> Expr!ParserError {
       self.advance()
       Constant(n)
     }
+    Identifier(name) => {
+      self.advance()
+      Variable(name)
+    }
+    Lparen => {
+      self.advance()
+      let expr = self.parse_expr!()
+      self.expect!(Rparen)
+      expr
+    }
+    _ => raise ExpectedExpr(token)
+  }
+}
+
+fn parse_postfix_expr(self: Parser) -> Expr!ParserError {
+  let mut lhs = self.parse_primary_expr!()
+
+  while true {
+    match self.peek() {
+      PlusPlus => {
+        self.advance()
+        lhs = Unary(~op=Inc(~is_prefix=false), ~expr=lhs)
+      }
+      MinusMinus => {
+        self.advance()
+        lhs = Unary(~op=Dec(~is_prefix=false), ~expr=lhs)
+      }
+      _ => break
+    }
+  }
+
+  lhs
+}
+
+fn parse_factor(self: Parser) -> Expr!ParserError {
+  let token = self.peek()
+
+  match token {
     Minus => {
       self.advance()
       let expr = self.parse_factor!()
@@ -132,17 +170,17 @@ fn parse_factor(self: Parser) -> Expr!ParserError {
       let expr = self.parse_factor!()
       Unary(~op=Not, ~expr)
     }
-    Lparen => {
+    PlusPlus => {
       self.advance()
-      let expr = self.parse_expr!()
-      self.expect!(Rparen)
-      expr
+      let expr = self.parse_factor!()
+      Unary(~op=Inc(~is_prefix=true), ~expr)
     }
-    Identifier(name) => {
+    MinusMinus => {
       self.advance()
-      Variable(name)
+      let expr = self.parse_factor!()
+      Unary(~op=Dec(~is_prefix=true), ~expr)
     }
-    _ => raise ExpectedExpr(token)
+    _ => self.parse_postfix_expr!()
   }
 }
 

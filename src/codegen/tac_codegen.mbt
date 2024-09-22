@@ -35,10 +35,32 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
     Variable(name) => Variable(name)
     Unary(~op, ~expr) => {
       let src = self.convert_expr!(expr)
-      let dst_name = self.next_temp_var()
-      let dst = TacValue::Variable(dst_name)
-      self.emit(Unary(~op, ~src, ~dst))
-      dst
+
+      match op {
+        Inc(~is_prefix) | Dec(~is_prefix) as op => {
+          let op: @parse.BinaryOp = match op {
+            Inc(_) => Add
+            _ => Sub
+          }
+
+          if is_prefix {
+            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(1), ~dst=src))
+            src
+          } else {
+            // introduce a temporary variable to store the original value
+            let tmp_name = self.next_temp_var()
+            let tmp = TacValue::Variable(tmp_name)
+            self.emit(Copy(~src, ~dst=tmp))
+            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(1), ~dst=src))
+            tmp
+          }
+        }
+        _ => {
+          let dst = TacValue::Variable(self.next_temp_var()) 
+          self.emit(Unary(~op, ~src, ~dst))
+          dst
+        }
+      }
     }
     Binary(~op=LogicalAnd, ~lhs, ~rhs) => {
       let result_name = self.next_temp_var()
@@ -80,13 +102,31 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Binary(~op, ~lhs=v1, ~rhs=v2, ~dst))
       dst
     }
-    Assignment(~lhs=Variable(name), ~rhs) => {
-      let src = self.convert_expr!(rhs)
+    Assignment(~op, ~lhs=Variable(name), ~rhs) => {
+      let compound_op: Option[@parse.BinaryOp] = match op {
+        AssignAdd => Some(Add)
+        AssignSub => Some(Sub)
+        AssignMul => Some(Mul)
+        AssignDiv => Some(Div)
+        AssignRem => Some(Rem)
+        AssignAnd => Some(BitwiseAnd)
+        AssignOr => Some(BitwiseOr)
+        AssignXor => Some(BitwiseXor)
+        AssignShl => Some(Shl)
+        AssignShr => Some(Shr)
+        Assign => None
+      }
+
+      let src = self.convert_expr!(match compound_op {
+        Some(op) => Binary(~op, ~lhs=Variable(name), ~rhs)
+        None => rhs
+      })
+
       let dst = TacValue::Variable(name)
       self.emit(Copy(~src, ~dst))
       dst
     }
-    Assignment(~lhs, ~rhs=_) => raise InvalidAssignmentTarget(lhs)
+    Assignment(~op=_, ~lhs, ~rhs=_) => raise InvalidAssignmentTarget(lhs)
   }
 }
 

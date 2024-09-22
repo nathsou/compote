@@ -153,15 +153,31 @@ fn next(self: Lexer) -> LexerResult {
     }
     '+' => {
       self.advance()
-      Ok(Plus)
+      if self.consumes('=') {
+        Ok(PlusEqual)
+      } else if self.consumes('+') {
+        Ok(PlusPlus)
+      } else {
+        Ok(Plus)
+      }
     }
     '-' => {
       self.advance()
-      Ok(Minus)
+      if self.consumes('=') {
+        Ok(MinusEqual)
+      } else if self.consumes('-') {
+        Ok(MinusMinus)
+      } else {
+        Ok(Minus)
+      }
     }
     '*' => {
       self.advance()
-      Ok(Star)
+      if self.consumes('=') {
+        Ok(StarEqual)
+      } else {
+        Ok(Star)
+      }
     }
     '/' => {
       self.advance()
@@ -180,18 +196,26 @@ fn next(self: Lexer) -> LexerResult {
         self.index += 2 // skip "*/"
 
         return self.next()
+      } else if self.consumes('=') {
+        return Ok(SlashEqual)
       }
 
       Ok(Slash)
     }
     '%' => {
       self.advance()
-      Ok(Percent)
+      if self.consumes('=') {
+        Ok(PercentEqual)
+      } else {
+        Ok(Percent)
+      }
     }
     '&' => {
       self.advance()
       if self.consumes('&') {
         Ok(AmpersandAmpersand)
+      } else if self.consumes('=') {
+        Ok(AmpersandEqual)
       } else {
         Ok(Ampersand)
       }
@@ -200,18 +224,28 @@ fn next(self: Lexer) -> LexerResult {
       self.advance()
       if self.consumes('|') {
         Ok(PipePipe)
+      } else if self.consumes('=') {
+        Ok(PipeEqual)
       } else {
         Ok(Pipe)
       }
     }
     '^' => {
       self.advance()
-      Ok(Caret)
+      if self.consumes('=') {
+        Ok(CaretEqual)
+      } else {
+        Ok(Caret)
+      }
     }
     '<' => {
       self.advance()
       if self.consumes('<') {
-        Ok(Lshift)
+        if self.consumes('=') {
+          Ok(LshiftEqual)
+        } else {
+          Ok(Lshift)
+        }
       } else if self.consumes('=') {
         Ok(LessEqual)
       } else {
@@ -221,7 +255,11 @@ fn next(self: Lexer) -> LexerResult {
     '>' => {
       self.advance()
       if self.consumes('>') {
-        Ok(Rshift)
+        if self.consumes('=') {
+          Ok(RshiftEqual)
+        } else {
+          Ok(Rshift)
+        }
       } else if self.consumes('=') {
         Ok(GreaterEqual)
       } else {
