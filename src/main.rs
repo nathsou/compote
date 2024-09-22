@@ -25,7 +25,7 @@ enum OperatingSystem {
 
 // Struct to hold the host state for WebAssembly
 struct HostState {
-    preprocessed: String,
+    preprocessed: Vec<u16>,
     print_buffer: Vec<u16>,
     output_buffer: Vec<u16>,
     module_outputs: Vec<String>,
@@ -33,9 +33,9 @@ struct HostState {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = App::new("compote")
-        .version("1.0")
-        .author("Author Name <email>")
-        .about("C Compiler driver in Rust")
+        .version("0.1")
+        .author("Nathan Soufflet")
+        .about("A toy C Compiler")
         .arg(Arg::with_name("lex")
              .long("lex")
              .help("Run lexer only"))
@@ -89,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up the host state for the WebAssembly module
     let host_state = HostState {
-        preprocessed,
+        preprocessed: preprocessed.encode_utf16().collect(),
         print_buffer: Vec::new(),
         output_buffer: Vec::new(),
         module_outputs: Vec::new(),
@@ -131,18 +131,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     // Define 'read_source_file_char' function
-    linker.func_wrap("host", "read_source_file_char", |caller: Caller<'_, HostState>, index: i32| -> Result<i32, Trap> {
-        let host_state = caller.data();
-        if let Some(ch) = host_state.preprocessed.chars().nth(index as usize) {
-            Ok(ch as i32)
-        } else {
-            Ok(0)
-        }
+    linker.func_wrap("host", "read_source_file_char", |mut caller: Caller<'_, HostState>, index: i32| {
+        let host_state = caller.data_mut();
+        host_state.preprocessed[index as usize] as i32
     })?;
 
     // Define 'get_source_file_length' function
-    linker.func_wrap("host", "get_source_file_length", |caller: Caller<'_, HostState>| -> Result<i32, Trap> {
-        Ok(caller.data().preprocessed.len() as i32)
+    linker.func_wrap("host", "get_source_file_length", |caller: Caller<'_, HostState>| {
+        caller.data().preprocessed.len() as i32
     })?;
 
     // Define 'output_char' function
