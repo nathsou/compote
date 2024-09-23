@@ -309,6 +309,7 @@ fn next(self: Lexer) -> LexerResult {
           "void" => Ok(Void)
           "if" => Ok(If)
           "else" => Ok(Else)
+          "goto" => Ok(Goto)
           _ => Ok(Identifier(identifier))
         }
       } else {

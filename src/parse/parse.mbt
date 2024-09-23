@@ -18,6 +18,10 @@ fn peek(self: Parser) -> Token {
   self.tokens[self.index]
 }
 
+fn lookahead(self: Parser, n: Int) -> Token {
+  self.tokens[self.index + n]
+}
+
 fn advance(self: Parser) -> Unit {
   self.index += 1
 }
@@ -222,12 +226,29 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
       self.advance()
       Null
     }
-    _ => {
-      let expr = self.parse_expr!()
+    Goto => {
+      self.advance()
+      let label = self.parse_identifier!()
       self.expect!(Semicolon)
-      Expression(expr)
+      Goto(label)
     }
+    Identifier(ident) => {
+      if self.lookahead(1) == Colon {
+        self.index += 2
+        let stmt = self.parse_stmt!()
+        Labeled(~label=ident, ~stmt)
+      } else {
+        self.parse_expr_stmt!()
+      }
+    }
+    _ => self.parse_expr_stmt!()
   }
+}
+
+fn parse_expr_stmt(self: Parser) -> Stmt!ParserError {
+  let expr = self.parse_expr!()
+  self.expect!(Semicolon)
+  Expression(expr)
 }
 
 fn parse_block_item(self: Parser) -> BlockItem!ParserError {

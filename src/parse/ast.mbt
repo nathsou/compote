@@ -16,6 +16,8 @@ pub enum Stmt {
   Return(Expr)
   Expression(Expr)
   If(~cond: Expr, ~then: Stmt, ~otherwise: Option[Stmt])
+  Labeled(~label: String, ~stmt: Stmt)
+  Goto(String)
   Null // for empty statements (just a semicolon)
 }
 
@@ -192,6 +194,12 @@ pub impl Show for Stmt with output(self, logger: Logger) {
         }
         None => ()
       }
+    }
+    Labeled(~label, ~stmt) => {
+      logger.write_string("\{label}: \{Show::to_string(stmt)}")
+    }
+    Goto(label) => {
+      logger.write_string("goto \{label};")
     }
     Null => {
       logger.write_string(";")

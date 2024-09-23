@@ -1,1 +1,1 @@
-moon build --target wasm
+cargo build --release && moon build --target wasm

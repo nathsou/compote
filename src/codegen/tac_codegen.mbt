@@ -176,6 +176,13 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
         }
       }
     }
+    Labeled(~label, ~stmt) => {
+      self.emit(Label(label))
+      self.convert_stmt!(stmt)
+    }
+    Goto(label) => {
+      self.emit(Jump(label))
+    }
     Null => ()
   }
 }

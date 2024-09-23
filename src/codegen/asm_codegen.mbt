@@ -36,7 +36,7 @@ fn convert_binary_op(op: @parse.BinaryOp) -> AsmBinaryOp!AsmBuilderError {
     Shl => Shl
     Shr => Sal
     Div | Rem | Equ | Neq | Lss | Leq | Gtr | Geq |
-    LogicalAnd | LogicalOr | Assignment(_) => {
+    LogicalAnd | LogicalOr | Assignment(_) | Ternary => {
       raise UnreachableBinaryOpConversion(op)
     }
   }
