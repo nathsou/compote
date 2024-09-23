@@ -20,8 +20,8 @@ fn is_lvalue(expr: @parse.Expr) -> Bool {
   }
 }
 
-fn resolve_expr(self: VariableResolutionPass, decl: @parse.Expr, scope: Map[String, String]) -> @parse.Expr!VariableResolutionError {
-  match decl {
+fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, scope: Map[String, String]) -> @parse.Expr!VariableResolutionError {
+  match expr {
     Variable(name) => {
       match scope.get(name) {
         Some(new_name) => @parse.Variable(new_name)
@@ -49,6 +49,13 @@ fn resolve_expr(self: VariableResolutionPass, decl: @parse.Expr, scope: Map[Stri
 
       @parse.Expr::Assignment(~op, ~lhs=self.resolve_expr!(lhs, scope), ~rhs=self.resolve_expr!(rhs, scope))
     }
+    Conditional(~cond, ~then, ~otherwise) => {
+      @parse.Conditional(
+        ~cond=self.resolve_expr!(cond, scope),
+        ~then=self.resolve_expr!(then, scope),
+        ~otherwise=self.resolve_expr!(otherwise, scope),
+      )
+    }
   }
 }
 
@@ -56,6 +63,16 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, scope: Map[Stri
   match stmt {
     Return(expr) => @parse.Stmt::Return(self.resolve_expr!(expr, scope))
     Expression(expr) => @parse.Stmt::Expression(self.resolve_expr!(expr, scope))
+    If(~cond, ~then, ~otherwise) => {
+      @parse.Stmt::If(
+        ~cond=self.resolve_expr!(cond, scope),
+        ~then=self.resolve_stmt!(then, scope),
+        ~otherwise=match otherwise {
+          Some(stmt) => Some(self.resolve_stmt!(stmt, scope))
+          None => None
+        },
+      )
+    }
     Null => @parse.Null
   }
 }

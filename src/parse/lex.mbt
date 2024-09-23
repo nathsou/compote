@@ -151,6 +151,14 @@ fn next(self: Lexer) -> LexerResult {
       self.advance()
       Ok(Semicolon)
     }
+    '?' => {
+      self.advance()
+      Ok(QuestionMark)
+    }
+    ':' => {
+      self.advance()
+      Ok(Colon)
+    }
     '+' => {
       self.advance()
       if self.consumes('=') {
@@ -299,6 +307,8 @@ fn next(self: Lexer) -> LexerResult {
           "int" => Ok(Int)
           "return" => Ok(Return)
           "void" => Ok(Void)
+          "if" => Ok(If)
+          "else" => Ok(Else)
           _ => Ok(Identifier(identifier))
         }
       } else {

@@ -93,6 +93,12 @@ fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
               let rhs = self.precedence_climbing!(precedence)
               lhs = Assignment(~op=assignment_op, ~lhs, ~rhs)
             }
+            Ternary => {
+              let then = self.parse_expr!()
+              self.expect!(Colon)
+              let otherwise = self.precedence_climbing!(precedence)
+              lhs = Conditional(~cond=lhs, ~then, ~otherwise)
+            }
             _ => { // left-associative
               let rhs = self.precedence_climbing!(precedence + 1)
               lhs = Binary(~op=op, ~lhs, ~rhs)
@@ -197,6 +203,20 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
       let expr = self.parse_expr!()
       self.expect!(Semicolon)
       Return(expr)
+    }
+    If => {
+      self.advance()
+      self.expect!(Lparen)
+      let cond = self.parse_expr!()
+      self.expect!(Rparen)
+      let then = self.parse_stmt!();
+      let otherwise = if self.consumes(Else) {
+        Some(self.parse_stmt!())
+      } else {
+        None
+      }
+
+      If(~cond, ~then, ~otherwise)
     }
     Semicolon => {
       self.advance()

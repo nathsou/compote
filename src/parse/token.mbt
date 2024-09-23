@@ -2,6 +2,7 @@
 pub enum Token {
   // symbols
   Lparen; Rparen; Lbrace; Rbrace; Comma; Semicolon
+  QuestionMark; Colon
   Plus; Minus; Star; Slash; Percent; Tilde; Bang
   AmpersandAmpersand; PipePipe; EqualEqual; BangEqual
   Less; Greater; LessEqual; GreaterEqual
@@ -10,7 +11,7 @@ pub enum Token {
   AmpersandEqual; PipeEqual; CaretEqual; LshiftEqual; RshiftEqual
   PlusPlus; MinusMinus
   // keywords
-  Int; Return; Void
+  Int; Return; Void; If; Else
   // literals
   IntLiteral(Int)
   // identifiers
@@ -48,6 +49,7 @@ pub fn to_binop(self: Token) -> Option[BinaryOp] {
     CaretEqual => Some(Assignment(AssignXor))
     LshiftEqual => Some(Assignment(AssignShl))
     RshiftEqual => Some(Assignment(AssignShr))
+    QuestionMark => Some(Ternary)
     _ => None
   }
 }
@@ -60,6 +62,8 @@ pub impl Show for Token with output(self, logger: Logger) {
     Rbrace => "}"
     Comma => ","
     Semicolon => ";"
+    QuestionMark => "?"
+    Colon => ":"
     Plus => "+"
     Minus => "-"
     Star => "*"
@@ -96,6 +100,8 @@ pub impl Show for Token with output(self, logger: Logger) {
     Int => "int"
     Return => "return"
     Void => "void"
+    If => "if"
+    Else => "else"
     IntLiteral(n) => n.to_string()
     Identifier(s) => s
   })

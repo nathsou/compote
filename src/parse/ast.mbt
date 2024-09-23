@@ -9,11 +9,13 @@ pub enum Expr {
   Unary(~op: UnaryOp, ~expr: Expr)
   Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr)
   Assignment(~op: AssignmentOp, ~lhs: Expr, ~rhs: Expr)
+  Conditional(~cond: Expr, ~then: Expr, ~otherwise: Expr)
 }
 
 pub enum Stmt {
   Return(Expr)
   Expression(Expr)
+  If(~cond: Expr, ~then: Stmt, ~otherwise: Option[Stmt])
   Null // for empty statements (just a semicolon)
 }
 
@@ -46,6 +48,7 @@ pub enum BinaryOp {
   Shl; Shr
   Equ; Neq; Lss; Leq; Gtr; Geq
   LogicalAnd; LogicalOr
+  Ternary
   Assignment(AssignmentOp)
 } derive(Eq)
 
@@ -67,6 +70,7 @@ pub fn precedence(self: BinaryOp) -> Int {
     BitwiseOr => 20
     LogicalAnd => 10
     LogicalOr => 5
+    Ternary => 3
     Assignment(_) => 1
   }
 }
@@ -124,6 +128,7 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
     Geq => ">="
     LogicalAnd => "&&"
     LogicalOr => "||"
+    Ternary => "?:"
     Assignment(op) => Show::to_string(op)
   })
 }
@@ -160,6 +165,9 @@ pub impl Show for Expr with output(self, logger: Logger) {
     Assignment(~op, ~lhs, ~rhs) => {
       logger.write_string("\{Show::to_string(lhs)} \{Show::to_string(op)} \{Show::to_string(rhs)}")
     }
+    Conditional(~cond, ~then, ~otherwise) => {
+      logger.write_string("\{Show::to_string(cond)} ? \{Show::to_string(then)} : \{Show::to_string(otherwise)}")
+    }
   }
 }
 
@@ -170,6 +178,20 @@ pub impl Show for Stmt with output(self, logger: Logger) {
     }
     Expression(expr) => {
       logger.write_string("\{Show::to_string(expr)};")
+    }
+    If(~cond, ~then, ~otherwise) => {
+      logger.write_string("if (\{Show::to_string(cond)}) {\n")
+      logger.write_string("\{Show::to_string(then)}\n")
+      logger.write_string("}")
+
+      match otherwise {
+        Some(stmt) => {
+          logger.write_string(" else {\n")
+          logger.write_string("\{Show::to_string(stmt)}\n")
+          logger.write_string("}")
+        }
+        None => ()
+      }
     }
     Null => {
       logger.write_string(";")

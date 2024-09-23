@@ -127,6 +127,21 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       dst
     }
     Assignment(~op=_, ~lhs, ~rhs=_) => raise InvalidAssignmentTarget(lhs)
+    Conditional(~cond, ~then, ~otherwise) => {
+      let cond = self.convert_expr!(cond)
+      let else_label = self.next_label("ternary_else")
+      let end_label = self.next_label("ternary_end")
+      let result = TacValue::Variable(self.next_temp_var())
+      self.emit(JumpIfZero(~cond, ~target=else_label))
+      let then_value = self.convert_expr!(then)
+      self.emit(Copy(~src=then_value, ~dst=result))
+      self.emit(Jump(end_label))
+      self.emit(Label(else_label))
+      let otherwise_value = self.convert_expr!(otherwise)
+      self.emit(Copy(~src=otherwise_value, ~dst=result))
+      self.emit(Label(end_label))
+      result
+    }
   }
 }
 
@@ -138,6 +153,28 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
     }
     Expression(expr) => {
       let _ = self.convert_expr!(expr)
+    }
+    If(~cond, ~then, ~otherwise) => {
+      let cond = self.convert_expr!(cond)
+      
+      match otherwise {
+        None => {
+          let end_label = self.next_label("if_end")
+          self.emit(JumpIfZero(~cond, ~target=end_label))
+          self.convert_stmt!(then)
+          self.emit(Label(end_label))
+        }
+        Some(otherwise) => {
+          let else_label = self.next_label("if_else")
+          let end_label = self.next_label("if_end")
+          self.emit(JumpIfZero(~cond, ~target=else_label))
+          self.convert_stmt!(then)
+          self.emit(Jump(end_label))
+          self.emit(Label(else_label))
+          self.convert_stmt!(otherwise)
+          self.emit(Label(end_label))
+        }
+      }
     }
     Null => ()
   }
