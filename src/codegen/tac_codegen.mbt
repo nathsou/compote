@@ -183,6 +183,14 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
     Goto(label) => {
       self.emit(Jump(label))
     }
+    Compound(items) => {
+      for item in items {
+        match item {
+          Decl(decl) => self.convert_decl!(decl)
+          Stmt(stmt) => self.convert_stmt!(stmt)
+        }
+      }
+    }
     Null => ()
   }
 }

@@ -23,19 +23,23 @@ fn is_lvalue(expr: @parse.Expr) -> Bool {
   }
 }
 
-struct Scope {
-  variables: Map[String, String]
+struct Env {
+  variables: Scope[String]
   goto_labels: Map[String, String]
 }
 
-fn Scope::new() -> Scope {
-  { variables: {}, goto_labels: {} }
+fn Env::new() -> Env {
+  { variables: Scope::new(), goto_labels: {} }
 }
 
-fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, scope: Scope) -> @parse.Expr!VariableResolutionError {
+fn child(self: Env) -> Env {
+  { variables: self.variables.child(), goto_labels: self.goto_labels }
+}
+
+fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, env: Env) -> @parse.Expr!VariableResolutionError {
   match expr {
     Variable(name) => {
-      match scope.variables.get(name) {
+      match env.variables.resolve(name) {
         Some(new_name) => @parse.Variable(new_name)
         None => raise UndeclaredVariable(name)
       }
@@ -51,70 +55,75 @@ fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, scope: Scope) -
         _ => ()
       }
 
-      @parse.Unary(~op, ~expr=self.resolve_expr!(expr, scope))
+      @parse.Unary(~op, ~expr=self.resolve_expr!(expr, env))
     }
-    Binary(~op, ~lhs, ~rhs) => @parse.Binary(~op, ~lhs=self.resolve_expr!(lhs, scope), ~rhs=self.resolve_expr!(rhs, scope))
+    Binary(~op, ~lhs, ~rhs) => @parse.Binary(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env))
     Assignment(~op, ~lhs, ~rhs) => {
       if not(is_lvalue(lhs)) {
         raise InvalidLvalue(Show::to_string(lhs))
       }
 
-      @parse.Expr::Assignment(~op, ~lhs=self.resolve_expr!(lhs, scope), ~rhs=self.resolve_expr!(rhs, scope))
+      @parse.Expr::Assignment(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env))
     }
     Conditional(~cond, ~then, ~otherwise) => {
       @parse.Conditional(
-        ~cond=self.resolve_expr!(cond, scope),
-        ~then=self.resolve_expr!(then, scope),
-        ~otherwise=self.resolve_expr!(otherwise, scope),
+        ~cond=self.resolve_expr!(cond, env),
+        ~then=self.resolve_expr!(then, env),
+        ~otherwise=self.resolve_expr!(otherwise, env),
       )
     }
   }
 }
 
-fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, scope: Scope) -> @parse.Stmt!VariableResolutionError {
+fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse.Stmt!VariableResolutionError {
   match stmt {
-    Return(expr) => @parse.Stmt::Return(self.resolve_expr!(expr, scope))
-    Expression(expr) => @parse.Stmt::Expression(self.resolve_expr!(expr, scope))
+    Return(expr) => @parse.Stmt::Return(self.resolve_expr!(expr, env))
+    Expression(expr) => @parse.Stmt::Expression(self.resolve_expr!(expr, env))
     If(~cond, ~then, ~otherwise) => {
       @parse.Stmt::If(
-        ~cond=self.resolve_expr!(cond, scope),
-        ~then=self.resolve_stmt!(then, scope),
+        ~cond=self.resolve_expr!(cond, env),
+        ~then=self.resolve_stmt!(then, env),
         ~otherwise=match otherwise {
-          Some(stmt) => Some(self.resolve_stmt!(stmt, scope))
+          Some(stmt) => Some(self.resolve_stmt!(stmt, env))
           None => None
         },
       )
     }
     Labeled(~label, ~stmt) => {
-      match scope.goto_labels.get(label) {
-        Some(unique_label) => @parse.Labeled(~label=unique_label, ~stmt=self.resolve_stmt!(stmt, scope))
+      match env.goto_labels.get(label) {
+        Some(unique_label) => @parse.Labeled(~label=unique_label, ~stmt=self.resolve_stmt!(stmt, env))
         None => raise UndeclaredLabel(label)
       }
     }
     Goto(label) => {
-      match scope.goto_labels.get(label) {
+      match env.goto_labels.get(label) {
         Some(unique_label) => @parse.Stmt::Goto(unique_label)
         None => raise UndeclaredLabel(label)
       }
+    }
+    Compound(items) => {
+      let block_env = env.child()
+      @parse.Compound(self.resolve_block!(items, block_env))
     }
     Null => @parse.Null
   }
 }
 
-fn resolve_decl(self: VariableResolutionPass, decl: @parse.Decl, scope: Scope) -> @parse.Decl!VariableResolutionError {
+fn resolve_decl(self: VariableResolutionPass, decl: @parse.Decl, env: Env) -> @parse.Decl!VariableResolutionError {
   match decl {
     VariableDecl(~ty, ~name, ~value) => {
-      if scope.variables.contains(name) {
-        raise VariableAlreadyDeclared(name)
+      let new_name = "var." + name + "." + self.next_var_id.to_string()
+
+      match env.variables.declare?(name, new_name) {
+        Ok(_) => ()
+        Err(MemberAlreadyDeclared) => raise VariableAlreadyDeclared(name)
       }
 
-      let new_name = "var." + name + "." + self.next_var_id.to_string()
-      scope.variables[name] = new_name
       self.next_var_id += 1
 
       match value {
         Some(expr) => {
-          let new_expr = self.resolve_expr!(expr, scope)
+          let new_expr = self.resolve_expr!(expr, env)
           @parse.VariableDecl(~ty, ~name=new_name, ~value=Some(new_expr))
         }
         None => @parse.VariableDecl(~ty, ~name=new_name, ~value=None)
@@ -123,79 +132,97 @@ fn resolve_decl(self: VariableResolutionPass, decl: @parse.Decl, scope: Scope) -
   }
 }
 
-fn collect_expr_labels(expr: @parse.Expr, scope: Scope) -> Unit {
+fn resolve_block(self: VariableResolutionPass, block: Array[@parse.BlockItem], env: Env) -> Array[@parse.BlockItem]!VariableResolutionError {
+  let new_block = []
+
+  for item in block {
+    match item {
+      Decl(decl) => {
+        let new_decl = self.resolve_decl!(decl, env)
+        new_block.push(@parse.BlockItem::Decl(new_decl))
+      }
+      Stmt(stmt) => {
+        let new_stmt = self.resolve_stmt!(stmt, env)
+        new_block.push(@parse.BlockItem::Stmt(new_stmt))
+      }
+    }
+  }
+
+  new_block
+}
+
+fn collect_expr_labels(expr: @parse.Expr, labels: Map[String, String]) -> Unit {
   match expr {
     Variable(_) => ()
     Constant(_) => ()
-    Unary(~op=_, ~expr) => collect_expr_labels(expr, scope)
+    Unary(~op=_, ~expr) => collect_expr_labels(expr, labels)
     Binary(~op=_, ~lhs, ~rhs) => {
-      collect_expr_labels(lhs, scope)
-      collect_expr_labels(rhs, scope)
+      collect_expr_labels(lhs, labels)
+      collect_expr_labels(rhs, labels)
     }
     Assignment(~op=_, ~lhs, ~rhs) => {
-      collect_expr_labels(lhs, scope)
-      collect_expr_labels(rhs, scope)
+      collect_expr_labels(lhs, labels)
+      collect_expr_labels(rhs, labels)
     }
     Conditional(~cond, ~then, ~otherwise) => {
-      collect_expr_labels(cond, scope)
-      collect_expr_labels(then, scope)
-      collect_expr_labels(otherwise, scope)
+      collect_expr_labels(cond, labels)
+      collect_expr_labels(then, labels)
+      collect_expr_labels(otherwise, labels)
     }
   }
 }
 
-fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, scope: Scope) -> Unit!VariableResolutionError {
+fn collect_block_labels(self: VariableResolutionPass, block: Array[@parse.BlockItem], labels: Map[String, String]) -> Unit!VariableResolutionError {
+  for item in block {
+    match item {
+      Decl(_) => ()
+      Stmt(stmt) => self.collect_stmt_labels!(stmt, labels)
+    }
+  }
+}
+
+fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, labels: Map[String, String]) -> Unit!VariableResolutionError {
   match stmt {
     Return(_) => ()
     Expression(_) => ()
     If(~cond, ~then, ~otherwise) => {
-      collect_expr_labels(cond, scope)
-      self.collect_stmt_labels!(then, scope)
+      collect_expr_labels(cond, labels)
+      self.collect_stmt_labels!(then, labels)
       match otherwise {
-        Some(stmt) => self.collect_stmt_labels!(stmt, scope)
+        Some(stmt) => self.collect_stmt_labels!(stmt, labels)
         None => ()
       }
     }
     Labeled(~label, ~stmt) => {
-      if scope.goto_labels.contains(label) {
+      if labels.contains(label) {
         raise LabelAlreadyDeclared(label)
       }
 
-      scope.goto_labels[label] = "goto." + label + "." + self.next_goto_label_id.to_string()
-      self.collect_stmt_labels!(stmt, scope)
+      labels[label] = "goto." + label + "." + self.next_goto_label_id.to_string()
+      self.collect_stmt_labels!(stmt, labels)
     }
     Goto(_) => ()
+    Compound(items) => {
+      self.collect_block_labels!(items, labels)
+    }
     Null => ()
   }
 }
 
-fn collect_function_def_labels(self: VariableResolutionPass, func: @parse.FunctionDef, scope: Scope) -> Unit!VariableResolutionError {
+fn collect_function_def_labels(self: VariableResolutionPass, func: @parse.FunctionDef, labels: Map[String, String]) -> Unit!VariableResolutionError {
   for item in func.body {
     match item {
       Decl(_) => ()
-      Stmt(stmt) => self.collect_stmt_labels!(stmt, scope)
+      Stmt(stmt) => self.collect_stmt_labels!(stmt, labels)
     }
   }
 }
 
 // Collect all the labels declared in this function (a goto can reference a label declared later in the function)
 fn resolve_function_def(self: VariableResolutionPass, func: @parse.FunctionDef) -> @parse.FunctionDef!VariableResolutionError {
-  let scope = Scope::new()
-  let new_body = []
-  self.collect_function_def_labels!(func, scope)
-
-  for item in func.body {
-    match item {
-      Decl(decl) => {
-        let new_decl = self.resolve_decl!(decl, scope)
-        new_body.push(@parse.Decl(new_decl))
-      }
-      Stmt(stmt) => {
-        let new_stmt = self.resolve_stmt!(stmt, scope)
-        new_body.push(@parse.Stmt(new_stmt))
-      }
-    }
-  }
+  let env = Env::new()
+  self.collect_function_def_labels!(func, env.goto_labels)
+  let new_body = self.resolve_block!(func.body, env)
 
   { return_type: func.return_type, name: func.name, body: new_body }
 }

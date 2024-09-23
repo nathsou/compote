@@ -18,6 +18,7 @@ pub enum Stmt {
   If(~cond: Expr, ~then: Stmt, ~otherwise: Option[Stmt])
   Labeled(~label: String, ~stmt: Stmt)
   Goto(String)
+  Compound(Array[BlockItem])
   Null // for empty statements (just a semicolon)
 }
 
@@ -200,6 +201,16 @@ pub impl Show for Stmt with output(self, logger: Logger) {
     }
     Goto(label) => {
       logger.write_string("goto \{label};")
+    }
+    Compound(items) => {
+      logger.write_string("{\n")
+      
+      for item in items {
+        logger.write_string(Show::to_string(item))
+        logger.write_string("\n")
+      }
+
+      logger.write_string("}")
     }
     Null => {
       logger.write_string(";")

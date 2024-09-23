@@ -232,6 +232,7 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
       self.expect!(Semicolon)
       Goto(label)
     }
+    Lbrace => self.parse_compound_stmt!()
     Identifier(ident) => {
       if self.lookahead(1) == Colon {
         self.index += 2
@@ -249,6 +250,20 @@ fn parse_expr_stmt(self: Parser) -> Stmt!ParserError {
   let expr = self.parse_expr!()
   self.expect!(Semicolon)
   Expression(expr)
+}
+
+fn parse_compound_stmt(self: Parser) -> Stmt!ParserError {
+  let items = []
+
+  self.expect!(Lbrace)
+
+  while not(self.matches(Rbrace)) {
+    items.push(self.parse_block_item!())
+  }
+
+  self.expect!(Rbrace)
+
+  Compound(items)
 }
 
 fn parse_block_item(self: Parser) -> BlockItem!ParserError {
