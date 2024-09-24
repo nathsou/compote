@@ -2,10 +2,11 @@
 pub struct VariableResolutionPass {
   mut next_var_id: Int
   mut next_goto_label_id: Int
+  mut next_loop_label_id: Int
 }
 
 pub fn VariableResolutionPass::new() -> VariableResolutionPass {
-  { next_var_id: 0, next_goto_label_id: 0 }
+  { next_var_id: 0, next_goto_label_id: 0, next_loop_label_id: 0 }
 }
 
 pub type! VariableResolutionError {
@@ -14,6 +15,8 @@ pub type! VariableResolutionError {
   InvalidLvalue(String)
   LabelAlreadyDeclared(String)
   UndeclaredLabel(String)
+  BreakOutsideLoop
+  ContinueOutsideLoop
 } derive(Show)
 
 fn is_lvalue(expr: @parse.Expr) -> Bool {
@@ -26,14 +29,33 @@ fn is_lvalue(expr: @parse.Expr) -> Bool {
 struct Env {
   variables: Scope[String]
   goto_labels: Map[String, String]
+  loop_labels: Array[String]
 }
 
 fn Env::new() -> Env {
-  { variables: Scope::new(), goto_labels: {} }
+  { variables: Scope::new(), goto_labels: {}, loop_labels: [] }
 }
 
 fn child(self: Env) -> Env {
-  { variables: self.variables.child(), goto_labels: self.goto_labels }
+  { variables: self.variables.child(), goto_labels: self.goto_labels, loop_labels: self.loop_labels }
+}
+
+fn push_loop_label(self: Env, label: String) -> Unit {
+  self.loop_labels.push(label)
+}
+
+fn pop_loop_label(self: Env) -> Unit {
+  let _ = self.loop_labels.pop()
+}
+
+fn get_loop_label(self: Env) -> String? {
+  self.loop_labels.last()
+}
+
+fn next_loop_label(self: VariableResolutionPass, prefix: String) -> String {
+  let label_name = prefix + "." + self.next_loop_label_id.to_string()
+  self.next_loop_label_id += 1
+  label_name
 }
 
 fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, env: Env) -> @parse.Expr!VariableResolutionError {
@@ -77,10 +99,10 @@ fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, env: Env) -> @p
 
 fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse.Stmt!VariableResolutionError {
   match stmt {
-    Return(expr) => @parse.Stmt::Return(self.resolve_expr!(expr, env))
-    Expression(expr) => @parse.Stmt::Expression(self.resolve_expr!(expr, env))
+    Return(expr) => Return(self.resolve_expr!(expr, env))
+    Expression(expr) => Expression(self.resolve_expr!(expr, env))
     If(~cond, ~then, ~otherwise) => {
-      @parse.Stmt::If(
+      If(
         ~cond=self.resolve_expr!(cond, env),
         ~then=self.resolve_stmt!(then, env),
         ~otherwise=match otherwise {
@@ -91,21 +113,91 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
     }
     Labeled(~label, ~stmt) => {
       match env.goto_labels.get(label) {
-        Some(unique_label) => @parse.Labeled(~label=unique_label, ~stmt=self.resolve_stmt!(stmt, env))
+        Some(unique_label) => Labeled(~label=unique_label, ~stmt=self.resolve_stmt!(stmt, env))
         None => raise UndeclaredLabel(label)
       }
     }
     Goto(label) => {
       match env.goto_labels.get(label) {
-        Some(unique_label) => @parse.Stmt::Goto(unique_label)
+        Some(unique_label) => Goto(unique_label)
         None => raise UndeclaredLabel(label)
       }
     }
     Compound(items) => {
       let block_env = env.child()
-      @parse.Compound(self.resolve_block!(items, block_env))
+      Compound(self.resolve_block!(items, block_env))
     }
-    Null => @parse.Null
+    Break(~label) => {
+      match label {
+        Some(_) => Break(~label)
+        None => {
+          match env.get_loop_label() {
+            Some(loop_label) => Break(~label=Some(loop_label))
+            None => raise BreakOutsideLoop
+          }
+        }
+      }
+    }
+    Continue(~label) => {
+      match label {
+        Some(_) => Continue(~label)
+        None => {
+          match env.get_loop_label() {
+            Some(loop_label) => Continue(~label=Some(loop_label))
+            None => raise ContinueOutsideLoop
+          }
+        }
+      }
+    }
+    While(~cond, ~body, ~label=_) => {
+      let loop_label = self.next_loop_label("while")
+      env.push_loop_label(loop_label)
+      let cond = self.resolve_expr!(cond, env)
+      let body = self.resolve_stmt!(body, env)
+      env.pop_loop_label()
+      While(~cond, ~body, ~label=Some(loop_label))
+    }
+    DoWhile(~body, ~cond, ~label=_) => {
+      let loop_label = self.next_loop_label("do_while")
+      env.push_loop_label(loop_label)
+      let body = self.resolve_stmt!(body, env)
+      let cond = self.resolve_expr!(cond, env)
+      env.pop_loop_label()
+      DoWhile(~body, ~cond, ~label=Some(loop_label))
+    }
+    For(~init, ~cond, ~post, ~body, ~label=_) => {
+      let for_env = env.child()
+      let loop_label = self.next_loop_label("for")
+      for_env.push_loop_label(loop_label)
+
+      let new_init: @parse.ForInit = match init {
+        InitEmpty => InitEmpty
+        InitDecl(decl) => {
+          let new_decl = self.resolve_decl!(decl, for_env)
+          InitDecl(new_decl)
+        }
+        InitExpr(expr) => {
+          let new_expr = self.resolve_expr!(expr, for_env)
+          InitExpr(new_expr)
+        }
+      }
+
+      let new_cond = match cond {
+        Some(expr) => Some(self.resolve_expr!(expr, for_env))
+        None => None
+      }
+
+      let new_post = match post {
+        Some(expr) => Some(self.resolve_expr!(expr, for_env))
+        None => None
+      }
+
+      let body = self.resolve_stmt!(body, for_env)
+      for_env.pop_loop_label()
+
+      For(~init=new_init, ~cond=new_cond, ~post=new_post, ~body, ~label=Some(loop_label))
+    }
+    Null => Null
   }
 }
 
@@ -151,27 +243,6 @@ fn resolve_block(self: VariableResolutionPass, block: Array[@parse.BlockItem], e
   new_block
 }
 
-fn collect_expr_labels(expr: @parse.Expr, labels: Map[String, String]) -> Unit {
-  match expr {
-    Variable(_) => ()
-    Constant(_) => ()
-    Unary(~op=_, ~expr) => collect_expr_labels(expr, labels)
-    Binary(~op=_, ~lhs, ~rhs) => {
-      collect_expr_labels(lhs, labels)
-      collect_expr_labels(rhs, labels)
-    }
-    Assignment(~op=_, ~lhs, ~rhs) => {
-      collect_expr_labels(lhs, labels)
-      collect_expr_labels(rhs, labels)
-    }
-    Conditional(~cond, ~then, ~otherwise) => {
-      collect_expr_labels(cond, labels)
-      collect_expr_labels(then, labels)
-      collect_expr_labels(otherwise, labels)
-    }
-  }
-}
-
 fn collect_block_labels(self: VariableResolutionPass, block: Array[@parse.BlockItem], labels: Map[String, String]) -> Unit!VariableResolutionError {
   for item in block {
     match item {
@@ -185,8 +256,7 @@ fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, labels: 
   match stmt {
     Return(_) => ()
     Expression(_) => ()
-    If(~cond, ~then, ~otherwise) => {
-      collect_expr_labels(cond, labels)
+    If(~cond=_, ~then, ~otherwise) => {
       self.collect_stmt_labels!(then, labels)
       match otherwise {
         Some(stmt) => self.collect_stmt_labels!(stmt, labels)
@@ -204,6 +274,17 @@ fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, labels: 
     Goto(_) => ()
     Compound(items) => {
       self.collect_block_labels!(items, labels)
+    }
+    Break(_) => ()
+    Continue(_) => ()
+    While(~cond=_, ~body, ~label=_) => {
+      self.collect_stmt_labels!(body, labels)
+    }
+    DoWhile(~body, ~cond=_, ~label=_) => {
+      self.collect_stmt_labels!(body, labels)
+    }
+    For(~init=_, ~cond=_, ~post=_, ~body, ~label=_) => {
+      self.collect_stmt_labels!(body, labels)
     }
     Null => ()
   }

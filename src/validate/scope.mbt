@@ -5,7 +5,7 @@ pub struct Scope[T] {
 
 pub type! ScopeError {
   MemberAlreadyDeclared
-} derive(Show)
+}
 
 pub fn Scope::new[T]() -> Scope[T] {
   { members: {}, parent: None }

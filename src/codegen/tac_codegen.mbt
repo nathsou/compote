@@ -7,6 +7,9 @@ pub struct TacBuilder {
 
 pub type! TacBuilderError {
   InvalidAssignmentTarget(@parse.Expr)
+  BreakWithoutLabel
+  ContinueWithoutLabel
+  LoopWithoutLabel
 } derive(Show)
 
 pub fn TacBuilder::new() -> TacBuilder {
@@ -27,6 +30,14 @@ fn next_label(self: TacBuilder, prefix: String) -> String {
 
 fn emit(self: TacBuilder, inst: TacInst) -> Unit {
   self.instructions.push(inst)
+}
+
+fn get_break_label(loop_label: String) -> String {
+  loop_label + ".break"
+}
+
+fn get_continue_label(loop_label: String) -> String {
+  loop_label + ".continue"
 }
 
 fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError {
@@ -190,6 +201,85 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
           Stmt(stmt) => self.convert_stmt!(stmt)
         }
       }
+    }
+    Break(~label) => {
+      match label {
+        Some(label) => self.emit(Jump(get_break_label(label)))
+        None => raise BreakWithoutLabel
+      }
+    }
+    Continue(~label) => {
+      match label {
+        Some(label) => self.emit(Jump(get_continue_label(label)))
+        None => raise ContinueWithoutLabel
+      }
+    }
+    While(~cond, ~body, ~label) => {
+      let loop_label = match label {
+        Some(label) => label
+        None => raise LoopWithoutLabel
+      }
+
+      let start_label = get_continue_label(loop_label)
+      let end_label = get_break_label(loop_label)
+      self.emit(Label(start_label))
+      let cond = self.convert_expr!(cond)
+      self.emit(JumpIfZero(~cond, ~target=end_label))
+      self.convert_stmt!(body)
+      self.emit(Jump(start_label))
+      self.emit(Label(end_label))
+    }
+    DoWhile(~body, ~cond, ~label) => {
+      let loop_label = match label {
+        Some(label) => label
+        None => raise LoopWithoutLabel
+      }
+
+      let start_label = self.next_label("do_start")
+      self.emit(Label(start_label))
+      self.convert_stmt!(body)
+      self.emit(Label(get_continue_label(loop_label)))
+      let cond = self.convert_expr!(cond)
+      self.emit(JumpIfNotZero(~cond, ~target=start_label))
+      self.emit(Label(get_break_label(loop_label)))
+    }
+    For(~init, ~cond, ~post, ~body, ~label) => {
+      let loop_label = match label {
+        Some(label) => label
+        None => raise LoopWithoutLabel
+      }
+
+      let start_label = self.next_label("for_start")
+      let continue_label = get_continue_label(loop_label)
+      let end_label = get_break_label(loop_label)
+
+      match init {
+        InitEmpty => ()
+        InitDecl(decl) => self.convert_decl!(decl)
+        InitExpr(expr) => { let _ = self.convert_expr!(expr) }
+      }
+
+      self.emit(Label(start_label))
+      
+      match cond {
+        Some(cond) => {
+          let cond = self.convert_expr!(cond)
+          self.emit(JumpIfZero(~cond, ~target=end_label))
+        }
+        None => ()
+      }
+
+      self.convert_stmt!(body)
+      
+      self.emit(Label(continue_label))
+
+      match post {
+        Some(post) => { let _ = self.convert_expr!(post) }
+        None => ()
+      }
+
+      self.emit(Jump(start_label))
+      self.emit(Label(end_label))
     }
     Null => ()
   }

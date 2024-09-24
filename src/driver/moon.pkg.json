@@ -7,6 +7,9 @@
     "link": {
         "wasm": {
             "exports": ["drive"]
+        },
+        "wasm-gc": {
+            "exports": ["drive"]
         }
     }
 }

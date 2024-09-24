@@ -310,6 +310,11 @@ fn next(self: Lexer) -> LexerResult {
           "if" => Ok(If)
           "else" => Ok(Else)
           "goto" => Ok(Goto)
+          "do" => Ok(Do)
+          "while" => Ok(While)
+          "for" => Ok(For)
+          "break" => Ok(Break)
+          "continue" => Ok(Continue)
           _ => Ok(Identifier(identifier))
         }
       } else {

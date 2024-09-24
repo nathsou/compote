@@ -11,7 +11,7 @@ pub enum Token {
   AmpersandEqual; PipeEqual; CaretEqual; LshiftEqual; RshiftEqual
   PlusPlus; MinusMinus
   // keywords
-  Int; Return; Void; If; Else; Goto
+  Int; Return; Void; If; Else; Goto; Do; While; For; Break; Continue
   // literals
   IntLiteral(Int)
   // identifiers
@@ -103,6 +103,11 @@ pub impl Show for Token with output(self, logger: Logger) {
     If => "if"
     Else => "else"
     Goto => "goto"
+    Do => "do"
+    While => "while"
+    For => "for"
+    Break => "break"
+    Continue => "continue"
     IntLiteral(n) => n.to_string()
     Identifier(s) => s
   })

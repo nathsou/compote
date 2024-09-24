@@ -4,7 +4,7 @@ pub struct Parser {
 }
 
 pub type! ParserError {
-  UnexpectedToken(Token)
+  UnexpectedToken(~expected: Token, ~received: Token)
   ExpectedIdentifier(Token)
   ExpectedType(Token)
   ExpectedExpr(Token)
@@ -32,7 +32,7 @@ fn expect(self: Parser, expected: Token) -> Unit!ParserError {
   if token == expected {
     self.advance()
   } else {
-    raise UnexpectedToken(token)
+    raise UnexpectedToken(~expected, ~received=token)
   }
 }
 
@@ -233,6 +233,33 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
       Goto(label)
     }
     Lbrace => self.parse_compound_stmt!()
+    Break => {
+      self.advance()
+      let label = match self.peek() {
+        Identifier(ident) => {
+          self.advance()
+          Some(ident)
+        }
+        _ => None
+      }
+      self.expect!(Semicolon)
+      Break(~label)
+    }
+    Continue => {
+      self.advance()
+      let label = match self.peek() {
+        Identifier(ident) => {
+          self.advance()
+          Some(ident)
+        }
+        _ => None
+      }
+      self.expect!(Semicolon)
+      Continue(~label)
+    }
+    While => self.parse_while_stmt!()
+    Do => self.parse_do_while_stmt!()
+    For => self.parse_for_stmt!()
     Identifier(ident) => {
       if self.lookahead(1) == Colon {
         self.index += 2
@@ -264,6 +291,64 @@ fn parse_compound_stmt(self: Parser) -> Stmt!ParserError {
   self.expect!(Rbrace)
 
   Compound(items)
+}
+
+fn parse_while_stmt(self: Parser) -> Stmt!ParserError {
+  self.expect!(While)
+  self.expect!(Lparen)
+  let cond = self.parse_expr!()
+  self.expect!(Rparen)
+  let body = self.parse_stmt!()
+
+  While(~cond, ~body, ~label=None)
+}
+
+fn parse_do_while_stmt(self: Parser) -> Stmt!ParserError {
+  self.expect!(Do)
+  let body = self.parse_stmt!()
+  self.expect!(While)
+  self.expect!(Lparen)
+  let cond = self.parse_expr!()
+  self.expect!(Rparen)
+  self.expect!(Semicolon)
+
+  DoWhile(~body, ~cond, ~label=None)
+}
+
+fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
+  self.expect!(For)
+  self.expect!(Lparen)
+
+  let init = if self.matches(Semicolon) {
+    self.advance()
+    InitEmpty
+  } else if self.matches(Int) {
+    InitDecl(self.parse_variable_decl!())
+  } else {
+    let expr = self.parse_expr!()
+    self.expect!(Semicolon)
+    InitExpr(expr)
+  }
+
+  let cond = if self.matches(Semicolon) {
+    None
+  } else {
+    Some(self.parse_expr!())
+  }
+
+  self.expect!(Semicolon)
+
+  let post = if self.matches(Rparen) {
+    None
+  } else {
+    Some(self.parse_expr!())
+  }
+
+  self.expect!(Rparen)
+
+  let body = self.parse_stmt!()
+
+  For(~init, ~cond, ~post, ~body, ~label=None)
 }
 
 fn parse_block_item(self: Parser) -> BlockItem!ParserError {

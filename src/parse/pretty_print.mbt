@@ -94,8 +94,8 @@ pub fn show_expr(expr: Expr) -> String {
     Variable(name) => name
     Unary(~op, ~expr) => {
       match op {
-        Inc(~is_prefix=true) => "++" + show_expr(expr)
-        Dec(~is_prefix=true) => "--" + show_expr(expr)
+        Inc(~is_prefix=false) => "(" + show_expr(expr) + ")++"
+        Dec(~is_prefix=true) => "(" + show_expr(expr)
         _ => Show::to_string(op) + "(" + show_expr(expr) + ")"
       }
     }
@@ -171,6 +171,69 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
     }
     Goto(label) => {
       self.emit("goto " + label + ";")
+    }
+    Break(~label) => {
+      match label {
+        Some(label) => {
+          self.emit("break " + label + ";")
+        }
+        None => {
+          self.emit("break;")
+        }
+      }
+    }
+    Continue(~label) => {
+      match label {
+        Some(label) => {
+          self.emit("continue " + label + ";")
+        }
+        None => {
+          self.emit("continue;")
+        }
+      }
+    }
+    While(~cond, ~body, ~label=_) => {
+      self.emit("while (" + show_expr(cond) + ") ")
+      self.show_stmt(body)
+    }
+    DoWhile(~body, ~cond, ~label=_) => {
+      self.emit("do ")
+      self.show_stmt(body)
+      self.emit("while (" + show_expr(cond) + ");")
+    }
+    For(~init, ~cond, ~post, ~body, ~label=_) => {
+      self.emit("for (")
+
+      match init {
+        InitEmpty => {
+          self.write_string(";")
+        }
+        InitDecl(decl) => {
+          self.show_decl(decl)
+        }
+        InitExpr(expr) => {
+          self.write_string(show_expr(expr) + ";")
+        }
+      }
+
+      match cond {
+        Some(expr) => {
+          self.write_string(show_expr(expr) + ";")
+        }
+        None => {
+          self.write_string(";")
+        }
+      }
+
+      match post {
+        Some(expr) => {
+          self.write_string(show_expr(expr))
+        }
+        None => ()
+      }
+
+      self.write_string(") ")
+      self.show_stmt(body)
     }
     Null => {
       self.emit(";")

@@ -15,16 +15,27 @@ pub enum Expr {
 pub enum Stmt {
   Return(Expr)
   Expression(Expr)
-  If(~cond: Expr, ~then: Stmt, ~otherwise: Option[Stmt])
+  If(~cond: Expr, ~then: Stmt, ~otherwise: Stmt?)
   Labeled(~label: String, ~stmt: Stmt)
   Goto(String)
   Compound(Array[BlockItem])
+  Break(~label: String?)
+  Continue(~label: String?)
+  While(~cond: Expr, ~body: Stmt, ~label: String?)
+  DoWhile(~body: Stmt, ~cond: Expr, ~label: String?)
+  For(~init: ForInit, ~cond:  Expr?, ~post: Expr?, ~body: Stmt, ~label: String?)
   Null // for empty statements (just a semicolon)
 }
 
 pub enum BlockItem {
   Stmt(Stmt)
   Decl(Decl)
+}
+
+pub enum ForInit {
+  InitEmpty
+  InitDecl(Decl)
+  InitExpr(Expr)
 }
 
 pub struct FunctionDef {
@@ -34,7 +45,7 @@ pub struct FunctionDef {
 }
 
 pub enum Decl {
-  VariableDecl(~ty: Type, ~name: String, ~value: Option[Expr])
+  VariableDecl(~ty: Type, ~name: String, ~value: Expr?)
 }
 
 pub struct Program {
