@@ -3,8 +3,12 @@ pub enum Type {
   Int; Void
 } derive(Eq)
 
+pub enum Constant {
+  IntConst(Int)
+} derive (Eq, Hash)
+
 pub enum Expr {
-  Constant(Int)
+  Constant(Constant)
   Variable(String)
   Unary(~op: UnaryOp, ~expr: Expr)
   Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr)
@@ -24,6 +28,9 @@ pub enum Stmt {
   While(~cond: Expr, ~body: Stmt, ~label: String?)
   DoWhile(~body: Stmt, ~cond: Expr, ~label: String?)
   For(~init: ForInit, ~cond:  Expr?, ~post: Expr?, ~body: Stmt, ~label: String?)
+  Switch(~expr: Expr, ~body: Stmt, ~label: String?, ~cases_count: Int) // cases count includes default
+  Case(~expr: Expr, ~body: Stmt)
+  Default(~body: Stmt)
   Null // for empty statements (just a semicolon)
 }
 

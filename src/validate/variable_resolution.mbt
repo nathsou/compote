@@ -3,10 +3,11 @@ pub struct VariableResolutionPass {
   mut next_var_id: Int
   mut next_goto_label_id: Int
   mut next_loop_label_id: Int
+  mut next_switch_label_id: Int
 }
 
 pub fn VariableResolutionPass::new() -> VariableResolutionPass {
-  { next_var_id: 0, next_goto_label_id: 0, next_loop_label_id: 0 }
+  { next_var_id: 0, next_goto_label_id: 0, next_loop_label_id: 0, next_switch_label_id: 0 }
 }
 
 pub type! VariableResolutionError {
@@ -15,8 +16,14 @@ pub type! VariableResolutionError {
   InvalidLvalue(String)
   LabelAlreadyDeclared(String)
   UndeclaredLabel(String)
-  BreakOutsideLoop
+  BreakOutsideLoopOrSwitch
   ContinueOutsideLoop
+  CaseOutsideSwitch
+  DefaultOutsideSwitch
+  CaseExprMustBeConstant
+  DuplicateCase(@parse.Constant)
+  MultipleDefaultInSwitch
+  Unreachable(String)
 } derive(Show)
 
 fn is_lvalue(expr: @parse.Expr) -> Bool {
@@ -29,32 +36,34 @@ fn is_lvalue(expr: @parse.Expr) -> Bool {
 struct Env {
   variables: Scope[String]
   goto_labels: Map[String, String]
-  loop_labels: Array[String]
+  stack: ResolutionStack
 }
 
 fn Env::new() -> Env {
-  { variables: Scope::new(), goto_labels: {}, loop_labels: [] }
+  { variables: Scope::new(), goto_labels: {}, stack: ResolutionStack::new() }
 }
 
 fn child(self: Env) -> Env {
-  { variables: self.variables.child(), goto_labels: self.goto_labels, loop_labels: self.loop_labels }
+  { variables: self.variables.child(), goto_labels: self.goto_labels, stack: self.stack }
 }
 
-fn push_loop_label(self: Env, label: String) -> Unit {
-  self.loop_labels.push(label)
+fn push(self: Env, entry: ResolutionStackEntry) -> Unit {
+  self.stack.push(entry)
 }
 
-fn pop_loop_label(self: Env) -> Unit {
-  let _ = self.loop_labels.pop()
-}
-
-fn get_loop_label(self: Env) -> String? {
-  self.loop_labels.last()
+fn pop(self: Env) -> Unit {
+  let _ = self.stack.pop()
 }
 
 fn next_loop_label(self: VariableResolutionPass, prefix: String) -> String {
   let label_name = prefix + "." + self.next_loop_label_id.to_string()
   self.next_loop_label_id += 1
+  label_name
+}
+
+fn next_switch_entry(self: VariableResolutionPass, prefix: String) -> String {
+  let label_name = prefix + "." + self.next_switch_label_id.to_string()
+  self.next_switch_label_id += 1
   label_name
 }
 
@@ -129,20 +138,20 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
     }
     Break(~label) => {
       match label {
-        Some(_) => Break(~label)
+        Some(_) => raise Unreachable("break with label before resolution")
         None => {
-          match env.get_loop_label() {
-            Some(loop_label) => Break(~label=Some(loop_label))
-            None => raise BreakOutsideLoop
+          match env.stack.peek() {
+            Some(Loop(label) | Switch({ label, cases: _, has_default: _ })) => Break(~label=Some(label))
+            None => raise BreakOutsideLoopOrSwitch
           }
         }
       }
     }
     Continue(~label) => {
       match label {
-        Some(_) => Continue(~label)
+        Some(_) => raise Unreachable("continue with label before resolution")
         None => {
-          match env.get_loop_label() {
+          match env.stack.get_innermost_loop_label() {
             Some(loop_label) => Continue(~label=Some(loop_label))
             None => raise ContinueOutsideLoop
           }
@@ -151,24 +160,24 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
     }
     While(~cond, ~body, ~label=_) => {
       let loop_label = self.next_loop_label("while")
-      env.push_loop_label(loop_label)
+      env.push(Loop(loop_label))
       let cond = self.resolve_expr!(cond, env)
       let body = self.resolve_stmt!(body, env)
-      env.pop_loop_label()
+      env.pop()
       While(~cond, ~body, ~label=Some(loop_label))
     }
     DoWhile(~body, ~cond, ~label=_) => {
       let loop_label = self.next_loop_label("do_while")
-      env.push_loop_label(loop_label)
+      env.push(Loop(loop_label))
       let body = self.resolve_stmt!(body, env)
       let cond = self.resolve_expr!(cond, env)
-      env.pop_loop_label()
+      env.pop()
       DoWhile(~body, ~cond, ~label=Some(loop_label))
     }
     For(~init, ~cond, ~post, ~body, ~label=_) => {
       let for_env = env.child()
       let loop_label = self.next_loop_label("for")
-      for_env.push_loop_label(loop_label)
+      for_env.push(Loop(loop_label))
 
       let new_init: @parse.ForInit = match init {
         InitEmpty => InitEmpty
@@ -193,9 +202,59 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
       }
 
       let body = self.resolve_stmt!(body, for_env)
-      for_env.pop_loop_label()
+      for_env.pop()
 
       For(~init=new_init, ~cond=new_cond, ~post=new_post, ~body, ~label=Some(loop_label))
+    }
+    Switch(~expr, ~body, ~label=_, ~cases_count=_) => {
+      let switch_label = self.next_switch_entry("switch")
+      let switch_entry = ResolutionStackSwitchEntry::new(switch_label)
+      env.push(Switch(switch_entry))
+      let new_expr = self.resolve_expr!(expr, env)
+      let new_body = self.resolve_stmt!(body, env)
+      env.pop()
+
+      let cases_count = switch_entry.cases.size() + if switch_entry.has_default { 1 } else { 0 }
+
+      Switch(~expr=new_expr, ~body=new_body, ~label=Some(switch_label), ~cases_count)
+    }
+    Case(~expr, ~body) => {
+      let const = match expr {
+        Constant(n) => n
+        _ => raise CaseExprMustBeConstant
+      }
+
+      let switch_entry = match env.stack.get_innermost_switch_entry() {
+        Some(entry) => entry
+        None => raise CaseOutsideSwitch
+      }
+
+      if switch_entry.cases.contains(const) {
+        raise DuplicateCase(const)
+      }
+
+      switch_entry.cases.insert(const)
+
+      let new_expr = self.resolve_expr!(expr, env)
+      let new_body = self.resolve_stmt!(body, env)
+
+      Case(~expr=new_expr, ~body=new_body)
+    }
+    Default(~body) => {
+      let switch_entry = match env.stack.get_innermost_switch_entry() {
+        Some(entry) => entry
+        None => raise DefaultOutsideSwitch
+      }
+
+      if switch_entry.has_default {
+        raise MultipleDefaultInSwitch
+      }
+
+      switch_entry.has_default = true
+
+      let new_body = self.resolve_stmt!(body, env)
+
+      Default(~body=new_body)
     }
     Null => Null
   }
@@ -284,6 +343,15 @@ fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, labels: 
       self.collect_stmt_labels!(body, labels)
     }
     For(~init=_, ~cond=_, ~post=_, ~body, ~label=_) => {
+      self.collect_stmt_labels!(body, labels)
+    }
+    Switch(~expr=_, ~body, ~label=_, ~cases_count=_) => {
+      self.collect_stmt_labels!(body, labels)
+    }
+    Case(~expr=_, ~body) => {
+      self.collect_stmt_labels!(body, labels)
+    }
+    Default(~body) => {
       self.collect_stmt_labels!(body, labels)
     }
     Null => ()

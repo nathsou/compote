@@ -97,7 +97,7 @@ fn compile(stage: DriverStage, os: @codegen.OperatingSystem) -> String!CompilerE
   match stage {
     Lex => {
       let tokens = lex_stage!(source)
-      Show::to_string(tokens)
+      tokens.join(" ")
     }
     Parse => {
       let program = parse_stage!(source)

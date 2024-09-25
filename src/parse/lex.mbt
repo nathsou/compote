@@ -303,20 +303,23 @@ fn next(self: Lexer) -> LexerResult {
       } else if is_alpha(char) || char == '_' {
         let identifier = self.parse_identifier()
 
-        match identifier {
-          "int" => Ok(Int)
-          "return" => Ok(Return)
-          "void" => Ok(Void)
-          "if" => Ok(If)
-          "else" => Ok(Else)
-          "goto" => Ok(Goto)
-          "do" => Ok(Do)
-          "while" => Ok(While)
-          "for" => Ok(For)
-          "break" => Ok(Break)
-          "continue" => Ok(Continue)
-          _ => Ok(Identifier(identifier))
-        }
+        Ok(match identifier {
+          "int" => Int
+          "return" => Return
+          "void" => Void
+          "if" => If
+          "else" => Else
+          "goto" => Goto
+          "do" => Do
+          "while" => While
+          "for" => For
+          "break" => Break
+          "continue" => Continue
+          "switch" => Switch
+          "case" => Case
+          "default" => Default
+          _ => Identifier(identifier)
+        })
       } else {
         Err(UnexepectedChar(char))
       }

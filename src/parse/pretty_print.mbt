@@ -88,9 +88,15 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
   })
 }
 
+pub impl Show for Constant with output(self, logger: Logger) {
+  logger.write_string(match self {
+    IntConst(n) => n.to_string()
+  })
+}
+
 pub fn show_expr(expr: Expr) -> String {
   match expr {
-    Constant(n) => n.to_string()
+    Constant(n) => Show::to_string(n)
     Variable(name) => name
     Unary(~op, ~expr) => {
       match op {
@@ -234,6 +240,22 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
 
       self.write_string(") ")
       self.show_stmt(body)
+    }
+    Switch(~expr, ~body, ~label=_, ~cases_count=_) => {
+      self.emit("switch (" + show_expr(expr) + ")")
+      self.show_stmt(body)
+    }
+    Case(~expr, ~body) => {
+      self.emit("case " + show_expr(expr) + ":")
+      self.indent()
+      self.show_stmt(body)
+      self.dedent()
+    }
+    Default(~body) => {
+      self.emit("default:")
+      self.indent()
+      self.show_stmt(body)
+      self.dedent()
     }
     Null => {
       self.emit(";")

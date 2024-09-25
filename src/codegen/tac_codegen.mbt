@@ -3,6 +3,7 @@ pub struct TacBuilder {
   instructions: Array[TacInst]
   mut next_var_id: Int
   mut next_label_id: Int
+  switch_stack: Array[TacSwitchStackEntry]
 }
 
 pub type! TacBuilderError {
@@ -10,10 +11,26 @@ pub type! TacBuilderError {
   BreakWithoutLabel
   ContinueWithoutLabel
   LoopWithoutLabel
+  SwitchWithoutLabel
+  CaseWithoutLabel
+  CaseOutsideSwitch
+  DefaultOutsideSwitch
 } derive(Show)
 
 pub fn TacBuilder::new() -> TacBuilder {
-  { instructions: [], next_var_id: 0, next_label_id: 0 }
+  {
+    instructions: [],
+    next_var_id: 0,
+    next_label_id: 0,
+    switch_stack: [],
+  }
+}
+
+struct TacSwitchStackEntry {
+  label: String
+  subject: TacValue
+  cases_count: Int
+  mut current_case_index: Int
 }
 
 fn next_temp_var(self: TacBuilder) -> String {
@@ -40,9 +57,17 @@ fn get_continue_label(loop_label: String) -> String {
   loop_label + ".continue"
 }
 
+fn get_case_label(switch_label: String, case_index: Int) -> String {
+  "case_" + switch_label + "." + case_index.to_string()
+}
+
+fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
+  "case_fallthrough_" + switch_label + "." + case_index.to_string()
+}
+
 fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError {
   match expr {
-    Constant(n) => Constant(n)
+    Constant(IntConst(n)) => Constant(n)
     Variable(name) => Variable(name)
     Unary(~op, ~expr) => {
       let src = self.convert_expr!(expr)
@@ -281,6 +306,83 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       self.emit(Jump(start_label))
       self.emit(Label(end_label))
     }
+    Switch(~expr, ~body, ~label, ~cases_count) => {
+      let switch_label = match label {
+        Some(label) => label
+        None => raise SwitchWithoutLabel
+      }
+
+      let subject = self.convert_expr!(expr)
+
+      if cases_count > 0 {
+        self.switch_stack.push({
+          label: switch_label,
+          subject,
+          cases_count,
+          current_case_index: 0,
+        })
+        self.emit(Jump(get_case_label(switch_label, 0)))
+        self.convert_stmt!(body)
+        self.emit(Label(get_break_label(switch_label)))
+        let _ = self.switch_stack.pop()
+      }
+    }
+    Case(~expr, ~body) => {
+      let switch_entry = match self.switch_stack.last() {
+        Some(entry) => entry
+        None => raise CaseOutsideSwitch
+      }
+
+      let case_index = switch_entry.current_case_index
+      let next_case_label = if case_index != switch_entry.cases_count - 1 {
+        switch_entry.current_case_index += 1
+        // if this is not the last case, jump to the next case label (skipping the condition)
+        let next_case_label = get_case_label(switch_entry.label, case_index + 1)
+        next_case_label
+      } else {
+        // if this is the last case, jump to the break label
+        get_break_label(switch_entry.label)
+      }
+
+      let fallthrough_label = get_case_fallthrough_label(switch_entry.label, case_index)
+
+      if case_index > 0 {
+        self.emit(Jump(fallthrough_label))
+      }
+
+      self.emit(Label(get_case_label(switch_entry.label, case_index)))
+      let enter_case = TacValue::Variable(self.next_temp_var())
+      self.emit(Binary(~op=Equ, ~lhs=switch_entry.subject, ~rhs=self.convert_expr!(expr), ~dst=enter_case))
+      self.emit(JumpIfZero(~cond=enter_case, ~target=next_case_label))
+      if case_index != 0 {
+        self.emit(Label(fallthrough_label))
+      }
+      self.convert_stmt!(body)
+    }
+    Default(~body) => {
+      let switch_entry = match self.switch_stack.last() {
+        Some(entry) => entry
+        None => raise DefaultOutsideSwitch
+      }
+
+      self.emit(Label(get_case_label(switch_entry.label, switch_entry.current_case_index)))
+      self.emit(Label(get_case_fallthrough_label(switch_entry.label, switch_entry.current_case_index)))
+
+      // the default case is not necessarily the last case in the switch statement
+      let next_fallthrough_label = if switch_entry.current_case_index != switch_entry.cases_count - 1 {
+        switch_entry.current_case_index += 1
+        Some(get_case_fallthrough_label(switch_entry.label, switch_entry.current_case_index))
+      } else {
+        None
+      }
+
+      self.convert_stmt!(body)
+
+      match next_fallthrough_label {
+        Some(label) => self.emit(Jump(label))
+        None => ()
+      }
+    }
     Null => ()
   }
 }
@@ -312,7 +414,7 @@ fn convert_function_def(func: @parse.FunctionDef) -> TacFunctionDef!TacBuilderEr
 
   // for now always add a "return 0;" at the end of the function
   // this handles the case where the function does not return a value
-  builder.convert_stmt!(Return(Constant(0)))
+  builder.convert_stmt!(Return(Constant(IntConst(0))))
 
   { name: func.name, body: builder.instructions }
 }

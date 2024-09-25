@@ -125,7 +125,7 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
   match token {
     IntLiteral(n) => {
       self.advance()
-      Constant(n)
+      Constant(IntConst(n))
     }
     Identifier(name) => {
       self.advance()
@@ -235,31 +235,20 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
     Lbrace => self.parse_compound_stmt!()
     Break => {
       self.advance()
-      let label = match self.peek() {
-        Identifier(ident) => {
-          self.advance()
-          Some(ident)
-        }
-        _ => None
-      }
       self.expect!(Semicolon)
-      Break(~label)
+      Break(~label=None)
     }
     Continue => {
       self.advance()
-      let label = match self.peek() {
-        Identifier(ident) => {
-          self.advance()
-          Some(ident)
-        }
-        _ => None
-      }
       self.expect!(Semicolon)
-      Continue(~label)
+      Continue(~label=None)
     }
     While => self.parse_while_stmt!()
     Do => self.parse_do_while_stmt!()
     For => self.parse_for_stmt!()
+    Switch => self.parse_switch_stmt!()
+    Case => self.parse_case_stmt!()
+    Default => self.parse_default_stmt!()
     Identifier(ident) => {
       if self.lookahead(1) == Colon {
         self.index += 2
@@ -349,6 +338,33 @@ fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
   let body = self.parse_stmt!()
 
   For(~init, ~cond, ~post, ~body, ~label=None)
+}
+
+fn parse_case_stmt(self: Parser) -> Stmt!ParserError {
+  self.expect!(Case)
+  let expr = self.parse_expr!()
+  self.expect!(Colon)
+  let body = self.parse_stmt!()
+
+  Case(~expr, ~body)
+}
+
+fn parse_default_stmt(self: Parser) -> Stmt!ParserError {
+  self.expect!(Default)
+  self.expect!(Colon)
+  let body = self.parse_stmt!()
+
+  Default(~body)
+}
+
+fn parse_switch_stmt(self: Parser) -> Stmt!ParserError {
+  self.expect!(Switch)
+  self.expect!(Lparen)
+  let expr = self.parse_expr!()
+  self.expect!(Rparen)
+  let body = self.parse_stmt!()
+
+  Switch(~expr, ~body, ~label=None, ~cases_count=0)
 }
 
 fn parse_block_item(self: Parser) -> BlockItem!ParserError {
