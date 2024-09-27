@@ -103,6 +103,15 @@ fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, env: Env) -> @p
         ~otherwise=self.resolve_expr!(otherwise, env),
       )
     }
+    Call(~name, ~args) => {
+      let new_args = []
+
+      for arg in args {
+        new_args.push(self.resolve_expr!(arg, env))
+      }
+
+      @parse.Call(~name, ~args=new_args)
+    }
   }
 }
 
@@ -262,7 +271,7 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
 
 fn resolve_decl(self: VariableResolutionPass, decl: @parse.Decl, env: Env) -> @parse.Decl!VariableResolutionError {
   match decl {
-    VariableDecl(~ty, ~name, ~value) => {
+    VarDecl({ ty, name, value }) => {
       let new_name = "var." + name + "." + self.next_var_id.to_string()
 
       match env.variables.declare?(name, new_name) {
@@ -275,10 +284,18 @@ fn resolve_decl(self: VariableResolutionPass, decl: @parse.Decl, env: Env) -> @p
       match value {
         Some(expr) => {
           let new_expr = self.resolve_expr!(expr, env)
-          @parse.VariableDecl(~ty, ~name=new_name, ~value=Some(new_expr))
+          VarDecl({ ty, name: new_name, value: Some(new_expr) })
         }
-        None => @parse.VariableDecl(~ty, ~name=new_name, ~value=None)
+        None => VarDecl({ ty, name: new_name, value: None })
       }
+    }
+    FunDecl({ return_type, name, params, body }) => {
+      let new_body = match body {
+        Some(body) => Some(self.resolve_block!(body, env))
+        None => None
+      }
+
+      FunDecl({ return_type, name, params, body: new_body })
     }
   }
 }
@@ -358,22 +375,23 @@ fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, labels: 
   }
 }
 
-fn collect_function_def_labels(self: VariableResolutionPass, func: @parse.FunctionDef, labels: Map[String, String]) -> Unit!VariableResolutionError {
-  for item in func.body {
-    match item {
-      Decl(_) => ()
-      Stmt(stmt) => self.collect_stmt_labels!(stmt, labels)
-    }
+fn collect_function_def_labels(self: VariableResolutionPass, func: @parse.FunctionDecl, labels: Map[String, String]) -> Unit!VariableResolutionError {
+  match func.body {
+    None => ()
+    Some(body) => self.collect_block_labels!(body, labels)
   }
 }
 
 // Collect all the labels declared in this function (a goto can reference a label declared later in the function)
-fn resolve_function_def(self: VariableResolutionPass, func: @parse.FunctionDef) -> @parse.FunctionDef!VariableResolutionError {
+fn resolve_function_def(self: VariableResolutionPass, func: @parse.FunctionDecl) -> @parse.FunctionDecl!VariableResolutionError {
   let env = Env::new()
   self.collect_function_def_labels!(func, env.goto_labels)
-  let new_body = self.resolve_block!(func.body, env)
+  let new_body = match func.body {
+    Some(body) => Some(self.resolve_block!(body, env))
+    None => None
+  }
 
-  { return_type: func.return_type, name: func.name, body: new_body }
+  { return_type: func.return_type, name: func.name, params: func.params, body: new_body }
 }
 
 pub fn resolved(self: VariableResolutionPass, program: @parse.Program) -> @parse.Program!VariableResolutionError {

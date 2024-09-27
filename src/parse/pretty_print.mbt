@@ -108,12 +108,13 @@ pub fn show_expr(expr: Expr) -> String {
     Binary(~op, ~lhs, ~rhs) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
     Assignment(~op, ~lhs, ~rhs) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
     Conditional(~cond, ~then, ~otherwise) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
+    Call(~name, ~args) => name + "(" + args.map(show_expr).join(", ") + ")"
   }
 }
 
 fn show_decl(self: PrettyPrinter, decl: Decl) -> Unit {
   match decl {
-    VariableDecl(~ty, ~name, ~value) => {
+    VarDecl({ ty, name, value }) => {
       match value {
         Some(expr) => {
           self.emit(Show::to_string(ty) + " " + name + " = " + show_expr(expr) + ";")
@@ -122,6 +123,9 @@ fn show_decl(self: PrettyPrinter, decl: Decl) -> Unit {
           self.emit(Show::to_string(ty) + " " + name + ";")
         }
       }
+    }
+    FunDecl(decl) => {
+      self.show_function_decl(decl)
     }
   }
 }
@@ -263,17 +267,29 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
   }
 }
 
-pub fn show_function_def(self: PrettyPrinter, func: FunctionDef) -> Unit {
-  self.emit(Show::to_string(func.return_type) + " " + func.name + "() {")
-  self.indent()
-  self.show_block(func.body)
-  self.dedent()
-  self.emit("}")
+pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
+  self.emit(Show::to_string(func.return_type) + " " + func.name + "()" + if func.body.is_empty() {
+    ";"
+  } else {
+    " {"
+  })
+
+  match func.body {
+    Some(body) => {
+      self.indent()
+      self.show_block(body)
+      self.dedent()
+      self.emit("}")
+    }
+    None => ()
+  }
+
+  self.emit("")
 }
 
 pub fn show_program(self: PrettyPrinter, program: Program) -> Unit {
   for func in program.functions {
-    self.show_function_def(func)
+    self.show_function_decl(func)
   }
 }
 
@@ -281,9 +297,9 @@ pub impl Show for Expr with output(self, logger: Logger) {
   logger.write_string(show_expr(self))
 }
 
-pub impl Show for FunctionDef with output(self, logger: Logger) {
+pub impl Show for FunctionDecl with output(self, logger: Logger) {
   let printer = PrettyPrinter::new(logger)
-  printer.show_function_def(self)
+  printer.show_function_decl(self)
 }
 
 pub impl Show for Program with output(self, logger: Logger) {

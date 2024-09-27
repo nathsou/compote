@@ -14,6 +14,7 @@ pub enum Expr {
   Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr)
   Assignment(~op: AssignmentOp, ~lhs: Expr, ~rhs: Expr)
   Conditional(~cond: Expr, ~then: Expr, ~otherwise: Expr)
+  Call(~name: String, ~args: Array[Expr])
 }
 
 pub enum Stmt {
@@ -45,18 +46,31 @@ pub enum ForInit {
   InitExpr(Expr)
 }
 
-pub struct FunctionDef {
+pub struct VariableDecl {
+  ty: Type
+  name: String
+  value: Expr?
+}
+
+pub struct FunctionParam {
+  ty: Type
+  name: String
+}
+
+pub struct FunctionDecl {
   return_type: Type
   name: String
-  body: Array[BlockItem]
+  params: Array[FunctionParam]
+  body: Array[BlockItem]?
 }
 
 pub enum Decl {
-  VariableDecl(~ty: Type, ~name: String, ~value: Expr?)
+  VarDecl(VariableDecl)
+  FunDecl(FunctionDecl)
 }
 
 pub struct Program {
-  functions: Array[FunctionDef]
+  functions: Array[FunctionDecl]
 }
 
 pub enum UnaryOp {

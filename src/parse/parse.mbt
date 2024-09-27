@@ -8,6 +8,8 @@ pub type! ParserError {
   ExpectedIdentifier(Token)
   ExpectedType(Token)
   ExpectedExpr(Token)
+  EmptyParamListNotSupportedUseVoidInstead
+  TrailingComma
 } derive(Show)
 
 pub fn Parser::new(tokens: Array[Token]) -> Parser {
@@ -129,7 +131,13 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
     }
     Identifier(name) => {
       self.advance()
-      Variable(name)
+
+      if self.matches(Lparen) {
+        let args = self.parse_argument_list!()
+        Call(~name, ~args)
+      } else {
+        Variable(name)
+      }
     }
     Lparen => {
       self.advance()
@@ -139,6 +147,26 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
     }
     _ => raise ExpectedExpr(token)
   }
+}
+
+fn parse_argument_list(self: Parser) -> Array[Expr]!ParserError {
+  let args = []
+
+  self.expect!(Lparen)
+
+  while not(self.matches(Rparen)) {
+    args.push(self.parse_expr!())
+
+    if not(self.consumes(Comma)) {
+      break
+    } else if self.matches(Rparen) {
+      raise TrailingComma
+    }
+  }
+
+  self.expect!(Rparen)
+
+  args
 }
 
 fn parse_postfix_expr(self: Parser) -> Expr!ParserError {
@@ -312,7 +340,7 @@ fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
     self.advance()
     InitEmpty
   } else if self.matches(Int) {
-    InitDecl(self.parse_variable_decl!())
+    InitDecl(VarDecl(self.parse_variable_decl!()))
   } else {
     let expr = self.parse_expr!()
     self.expect!(Semicolon)
@@ -374,21 +402,77 @@ fn parse_block_item(self: Parser) -> BlockItem!ParserError {
   }
 }
 
-fn parse_variable_decl(self: Parser) -> Decl!ParserError {
+fn parse_variable_decl(self: Parser) -> VariableDecl!ParserError {
   let ty = self.parse_type!()
   let name = self.parse_identifier!()
+  self.parse_variable_decl_rhs!(ty, name)
+}
+
+fn parse_variable_decl_rhs(self: Parser, ty: Type, name: String) -> VariableDecl!ParserError {
   let value = if self.consumes(Equal) {
     Some(self.parse_expr!())
   } else {
     None
   }
+
   self.expect!(Semicolon)
 
-  VariableDecl(~ty, ~name, ~value)
+  { ty, name, value }
+}
+
+fn parse_param_list(self: Parser) -> Array[FunctionParam]!ParserError {
+  if self.consumes(Void) {
+    []
+  } else {
+    let params: Array[FunctionParam] = []
+    
+    while true {
+      let ty = self.parse_type!()
+      let name = self.parse_identifier!()
+      params.push({ ty, name })
+
+      if not(self.consumes(Comma)) {
+        break
+      }
+    }
+
+    if params.is_empty() {
+      raise EmptyParamListNotSupportedUseVoidInstead
+    }
+
+    params
+  }
+}
+
+fn parse_function_decl(self: Parser) -> FunctionDecl!ParserError {
+  let return_ty = self.parse_type!()
+  let name = self.parse_identifier!()
+  self.parse_function_decl_rhs!(return_ty, name)
+}
+
+fn parse_function_decl_rhs(self: Parser, return_type: Type, name: String) -> FunctionDecl!ParserError {
+  self.expect!(Lparen)
+  let params = self.parse_param_list!()
+  self.expect!(Rparen)
+
+  let body = if self.consumes(Semicolon) {
+    None
+  } else {
+    Some(self.parse_block!())
+  }
+
+  { return_type, name, params, body }
 }
 
 fn parse_decl(self: Parser) -> Decl!ParserError {
-  self.parse_variable_decl!()
+  let ty = self.parse_type!()
+  let name = self.parse_identifier!()
+
+  if self.matches(Lparen) {
+    FunDecl(self.parse_function_decl_rhs!(ty, name))
+  } else {
+    VarDecl(self.parse_variable_decl_rhs!(ty, name))
+  }
 }
 
 fn parse_block(self: Parser) -> Array[BlockItem]!ParserError {
@@ -405,22 +489,11 @@ fn parse_block(self: Parser) -> Array[BlockItem]!ParserError {
   items
 }
 
-fn parse_function_def(self: Parser) -> FunctionDef!ParserError {
-  let return_type = self.parse_type!()
-  let name = self.parse_identifier!()
-  self.expect!(Lparen)
-  self.consumeIfPresent(Void)
-  self.expect!(Rparen)
-  let body = self.parse_block!()
-
-  { return_type, name, body }
-}
-
 pub fn parse(self: Parser) -> Program!ParserError {
   let functions = []
 
   while self.index < self.tokens.length() {
-    let decl = self.parse_function_def!()
+    let decl = self.parse_function_decl!()
     functions.push(decl)
   }
 

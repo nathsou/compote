@@ -389,7 +389,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
 
 fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit!TacBuilderError {
   match decl {
-    VariableDecl(~ty=_, ~name, ~value) => {
+    VarDecl({ ty: _, name, value }) => {
       match value {
         Some(expr) => {
           let src = self.convert_expr!(expr)
@@ -402,14 +402,19 @@ fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit!TacBuilderError {
   }
 }
 
-fn convert_function_def(func: @parse.FunctionDef) -> TacFunctionDef!TacBuilderError {
+fn convert_function_def(func: @parse.FunctionDecl) -> TacFunctionDef!TacBuilderError {
   let builder = TacBuilder::new()
-  
-  for item in func.body {
-    match item {
-      Stmt(stmt) => builder.convert_stmt!(stmt)
-      Decl(decl) => builder.convert_decl!(decl)
+
+  match func.body {
+    Some(body) => {
+      for item in body {
+        match item {
+          Stmt(stmt) => builder.convert_stmt!(stmt)
+          Decl(decl) => builder.convert_decl!(decl)
+        }
+      }
     }
+    None => ()
   }
 
   // for now always add a "return 0;" at the end of the function

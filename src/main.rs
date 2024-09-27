@@ -36,6 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .version("0.1")
         .author("Nathan Soufflet")
         .about("A toy C Compiler")
+        // Added support for the -c flag
+        .arg(Arg::with_name("compile_only")
+             .short("c")
+             .help("Compile only; do not link"))
         .arg(Arg::with_name("lex")
              .long("lex")
              .help("Run lexer only"))
@@ -54,12 +58,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(Arg::with_name("S")
              .short("S")
              .help("Compile only; do not assemble or link"))
+        // Modified to accept multiple source files
         .arg(Arg::with_name("source")
              .required(true)
-             .help("Input source file"))
+             .multiple(true)
+             .help("Input source files"))
         .get_matches();
 
-    let source_file = matches.value_of("source").unwrap();
+    // Collect the source files
+    let source_files: Vec<&str> = matches.values_of("source").unwrap().collect();
 
     // Determine the compilation stage
     let stage = if matches.is_present("lex") {
@@ -84,6 +91,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Iterate over each source file
+    for source_file in source_files {
+        // Process each source file individually
+        process_source_file(source_file, &matches, &stage, &os)?;
+    }
+
+    Ok(())
+}
+
+// Function to process a single source file
+fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &DriverStage, os: &OperatingSystem) -> Result<(), Box<dyn std::error::Error>> {
     // Read and preprocess the source file
     let preprocessed = preprocess(source_file)?;
 
@@ -199,15 +217,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let file_path = Path::new(source_file);
                         let asm_file_path = file_path.with_extension("s");
                         fs::write(&asm_file_path, asm_code)?;
-                    } else if matches.is_present("codegen") || stage != DriverStage::Codegen {
+                    } else if matches.is_present("compile_only") {
+                        // Compile to object file without linking
+                        let file_path = Path::new(source_file);
+                        let asm_file_path = file_path.with_extension("s");
+                        let obj_file_path = file_path.with_extension("o");
+
+                        // Write assembly to a temporary .s file
+                        fs::write(&asm_file_path, asm_code)?;
+
+                        // Assemble to .o file
+                        let status = Command::new(CC)
+                            .arg("-c")
+                            .arg(&asm_file_path)
+                            .arg("-o")
+                            .arg(&obj_file_path)
+                            .status()?;
+
+                        if !status.success() {
+                            eprintln!("Error during assembly of {}", asm_file_path.display());
+                            std::process::exit(1);
+                        }
+
+                        // Clean up the .s file
+                        fs::remove_file(&asm_file_path)?;
+
+                    } else if matches.is_present("codegen") || *stage != DriverStage::Codegen {
                         // Print assembly code
                         println!("{}", asm_code);
                     } else {
                         // Assemble the code into an executable
-                        let file_path = Path::new(source_file);
-                        let output_file_path = file_path.with_extension("");
-                        let output_file_path = output_file_path.to_string_lossy();
-                        assemble(&asm_code, &output_file_path)?;
+                        let output_file_path = Path::new(source_file).with_extension("");
+                        assemble(&asm_code, output_file_path.to_str().unwrap())?;
                     }
                 },
                 Err(err_msg) => {
@@ -258,7 +299,7 @@ fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
     let output = Command::new(CC)
         .arg(&asm_file_path)
         .arg("-o")
-        .arg(output_file_path)
+        .arg(&output_file_path)
         .output()?;
 
     // Clean up temporary file
