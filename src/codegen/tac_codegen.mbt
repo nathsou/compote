@@ -1,8 +1,13 @@
 
-pub struct TacBuilder {
-  instructions: Array[TacInst]
+struct TacContext {
   mut next_var_id: Int
   mut next_label_id: Int
+}
+
+let ctx: TacContext = { next_var_id: 0, next_label_id: 0 }
+
+pub struct TacBuilder {
+  instructions: Array[TacInst]
   switch_stack: Array[TacSwitchStackEntry]
 }
 
@@ -20,8 +25,6 @@ pub type! TacBuilderError {
 pub fn TacBuilder::new() -> TacBuilder {
   {
     instructions: [],
-    next_var_id: 0,
-    next_label_id: 0,
     switch_stack: [],
   }
 }
@@ -33,15 +36,15 @@ struct TacSwitchStackEntry {
   mut current_case_index: Int
 }
 
-fn next_temp_var(self: TacBuilder) -> String {
-  let var_name = "tmp." + self.next_var_id.to_string()
-  self.next_var_id += 1
+fn next_temp_var() -> String {
+  let var_name = "tmp." + ctx.next_var_id.to_string()
+  ctx.next_var_id += 1
   var_name
 }
 
-fn next_label(self: TacBuilder, prefix: String) -> String {
-  let label_name = prefix + self.next_label_id.to_string()
-  self.next_label_id += 1
+fn next_label(prefix: String) -> String {
+  let label_name = prefix + ctx.next_label_id.to_string()
+  ctx.next_label_id += 1
   label_name
 }
 
@@ -84,7 +87,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
             src
           } else {
             // introduce a temporary variable to store the original value
-            let tmp_name = self.next_temp_var()
+            let tmp_name = next_temp_var()
             let tmp = TacValue::Variable(tmp_name)
             self.emit(Copy(~src, ~dst=tmp))
             self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(1), ~dst=src))
@@ -92,17 +95,17 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
           }
         }
         _ => {
-          let dst = TacValue::Variable(self.next_temp_var()) 
+          let dst = TacValue::Variable(next_temp_var()) 
           self.emit(Unary(~op, ~src, ~dst))
           dst
         }
       }
     }
     Binary(~op=LogicalAnd, ~lhs, ~rhs) => {
-      let result_name = self.next_temp_var()
+      let result_name = next_temp_var()
       let result = TacValue::Variable(result_name)
-      let false_label = self.next_label("and_false")
-      let end_label = self.next_label("and_end")
+      let false_label = next_label("and_false")
+      let end_label = next_label("and_end")
       let v1 = self.convert_expr!(lhs)
       self.emit(JumpIfZero(~cond=v1, ~target=false_label))
       let v2 = self.convert_expr!(rhs)
@@ -115,10 +118,10 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       result
     }
     Binary(~op=LogicalOr, ~lhs, ~rhs) => {
-      let result_name = self.next_temp_var()
+      let result_name = next_temp_var()
       let result = TacValue::Variable(result_name)
-      let true_label = self.next_label("or_true")
-      let end_label = self.next_label("or_end")
+      let true_label = next_label("or_true")
+      let end_label = next_label("or_end")
       let v1 = self.convert_expr!(lhs)
       self.emit(JumpIfNotZero(~cond=v1, ~target=true_label))
       let v2 = self.convert_expr!(rhs)
@@ -133,7 +136,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
     Binary(~op, ~lhs, ~rhs) => {
       let v1 = self.convert_expr!(lhs)
       let v2 = self.convert_expr!(rhs)
-      let dst_name = self.next_temp_var()
+      let dst_name = next_temp_var()
       let dst = TacValue::Variable(dst_name)
       self.emit(Binary(~op, ~lhs=v1, ~rhs=v2, ~dst))
       dst
@@ -165,9 +168,9 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
     Assignment(~op=_, ~lhs, ~rhs=_) => raise InvalidAssignmentTarget(lhs)
     Conditional(~cond, ~then, ~otherwise) => {
       let cond = self.convert_expr!(cond)
-      let else_label = self.next_label("ternary_else")
-      let end_label = self.next_label("ternary_end")
-      let result = TacValue::Variable(self.next_temp_var())
+      let else_label = next_label("ternary_else")
+      let end_label = next_label("ternary_end")
+      let result = TacValue::Variable(next_temp_var())
       self.emit(JumpIfZero(~cond, ~target=else_label))
       let then_value = self.convert_expr!(then)
       self.emit(Copy(~src=then_value, ~dst=result))
@@ -176,6 +179,17 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       let otherwise_value = self.convert_expr!(otherwise)
       self.emit(Copy(~src=otherwise_value, ~dst=result))
       self.emit(Label(end_label))
+      result
+    }
+    Call(~name, ~args) => {
+      let arg_values = []
+
+      for arg in args {
+        arg_values.push(self.convert_expr!(arg))
+      }
+
+      let result = TacValue::Variable(next_temp_var())
+      self.emit(Call(~name, ~args=arg_values, ~dst=result))
       result
     }
   }
@@ -195,14 +209,14 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       
       match otherwise {
         None => {
-          let end_label = self.next_label("if_end")
+          let end_label = next_label("if_end")
           self.emit(JumpIfZero(~cond, ~target=end_label))
           self.convert_stmt!(then)
           self.emit(Label(end_label))
         }
         Some(otherwise) => {
-          let else_label = self.next_label("if_else")
-          let end_label = self.next_label("if_end")
+          let else_label = next_label("if_else")
+          let end_label = next_label("if_end")
           self.emit(JumpIfZero(~cond, ~target=else_label))
           self.convert_stmt!(then)
           self.emit(Jump(end_label))
@@ -260,7 +274,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
         None => raise LoopWithoutLabel
       }
 
-      let start_label = self.next_label("do_start")
+      let start_label = next_label("do_start")
       self.emit(Label(start_label))
       self.convert_stmt!(body)
       self.emit(Label(get_continue_label(loop_label)))
@@ -274,7 +288,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
         None => raise LoopWithoutLabel
       }
 
-      let start_label = self.next_label("for_start")
+      let start_label = next_label("for_start")
       let continue_label = get_continue_label(loop_label)
       let end_label = get_break_label(loop_label)
 
@@ -351,7 +365,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       }
 
       self.emit(Label(get_case_label(switch_entry.label, case_index)))
-      let enter_case = TacValue::Variable(self.next_temp_var())
+      let enter_case = TacValue::Variable(next_temp_var())
       self.emit(Binary(~op=Equ, ~lhs=switch_entry.subject, ~rhs=self.convert_expr!(expr), ~dst=enter_case))
       self.emit(JumpIfZero(~cond=enter_case, ~target=next_case_label))
       if case_index != 0 {
@@ -399,10 +413,11 @@ fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit!TacBuilderError {
         None => ()
       }
     }
+    FunDecl(_) => ()
   }
 }
 
-fn convert_function_def(func: @parse.FunctionDecl) -> TacFunctionDef!TacBuilderError {
+fn convert_function_def(func: @parse.FunctionDecl) -> TacFunctionDef?!TacBuilderError {
   let builder = TacBuilder::new()
 
   match func.body {
@@ -413,22 +428,30 @@ fn convert_function_def(func: @parse.FunctionDecl) -> TacFunctionDef!TacBuilderE
           Decl(decl) => builder.convert_decl!(decl)
         }
       }
+
+      // for now always add a "return 0;" at the end of the function
+      // this handles the case where the function does not return a value
+      builder.convert_stmt!(Return(Constant(IntConst(0))))
+
+      Some({
+        name: func.name,
+        params: func.params.map(fn(param) { param.name }),
+        body: builder.instructions,
+      })
     }
-    None => ()
+    // ignore function declarations
+    None => None
   }
-
-  // for now always add a "return 0;" at the end of the function
-  // this handles the case where the function does not return a value
-  builder.convert_stmt!(Return(Constant(IntConst(0))))
-
-  { name: func.name, body: builder.instructions }
 }
 
 pub fn convert_prog(prog: @parse.Program) -> TacProgram!TacBuilderError {
   let functions = []
 
   for func in prog.functions {
-    functions.push(convert_function_def!(func))
+    match convert_function_def!(func) {
+      Some(def) => functions.push(def)
+      None => ()
+    }
   }
 
   { functions, }

@@ -79,6 +79,12 @@ fn next_loop_label(self: NameResolutionPass, prefix: String) -> String {
   label_name
 }
 
+fn next_goto_label(self: NameResolutionPass, prefix: String) -> String {
+  let label_name = "goto." + prefix + "." + self.next_goto_label_id.to_string()
+  self.next_goto_label_id += 1
+  label_name
+}
+
 fn next_switch_entry(self: NameResolutionPass, prefix: String) -> String {
   let label_name = prefix + "." + self.next_switch_label_id.to_string()
   self.next_switch_label_id += 1
@@ -381,7 +387,7 @@ fn collect_stmt_labels(self: NameResolutionPass, stmt: @parse.Stmt, labels: Map[
         raise LabelAlreadyDeclared(label)
       }
 
-      labels[label] = "goto." + label + "." + self.next_goto_label_id.to_string()
+      labels[label] = self.next_goto_label(label)
       self.collect_stmt_labels!(stmt, labels)
     }
     Goto(_) => ()
@@ -422,6 +428,10 @@ fn collect_function_def_labels(self: NameResolutionPass, func: @parse.FunctionDe
 // Collect all the labels declared in this function (a goto can reference a label declared later in the function)
 fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, env: Env) -> @parse.FunctionDecl!NameResolutionError {
   let { return_type, name, params, body } = func
+
+  env.goto_labels.clear() // Reset the goto labels for this function
+  self.collect_function_def_labels!(func, env.goto_labels)
+
   if env.identifiers.contains_local(name) {
     match env.identifiers.resolve(name) {
       Some({ new_name: _, linkage: None }) => raise DuplicateFunctionDeclaration(name)

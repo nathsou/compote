@@ -13,10 +13,12 @@ pub enum TacInst {
   JumpIfZero(~cond: TacValue, ~target: String)
   JumpIfNotZero(~cond: TacValue, ~target: String)
   Label(String)
+  Call(~name: String, ~args: Array[TacValue], ~dst: TacValue)
 } derive(Show)
 
 pub struct TacFunctionDef {
   name: String
+  params: Array[String]
   body: Array[TacInst]
 } derive(Show)
 
@@ -28,7 +30,9 @@ pub impl Show for TacProgram with output(self, logger: Logger) {
   for function in self.functions {
     logger.write_string("function ")
     logger.write_string(function.name)
-    logger.write_string("() {\n")
+    logger.write_string("(")
+    logger.write_string(function.params.join(", "))
+    logger.write_string(") {\n")
     
     for inst in function.body {
       logger.write_string("  ")

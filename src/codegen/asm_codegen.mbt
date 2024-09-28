@@ -61,6 +61,9 @@ fn asm(self: TacValue) -> AsmOperand {
   }
 }
 
+
+let arg_regs: Array[AsmReg] = [DI, SI, DX, CX, R8, R9]
+
 fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
   match inst {
     Return(value) => {
@@ -131,6 +134,63 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
     Label(name) => {
       self.emit(Label(name))
     }
+    Call(~name, ~args, ~dst) => {
+      // split_at currently panics if the index is out of bounds
+      let (reg_args, stack_args) = if args.length() > 6 {
+        args.split_at(6)
+      } else {
+        (args, [])
+      }
+      
+      // stack align to 16 bytes
+      let stack_padding = if stack_args.length() % 2 == 1 { 8 } else { 0 }
+
+      if stack_padding > 0 {
+        self.emit(AllocateStack(~size=stack_padding))
+      }
+
+      for i, arg in reg_args {
+        let asm_arg = arg.asm()
+        self.emit(Mov(~src=asm_arg, ~dst=Reg(arg_regs[i])))
+      }
+
+      // push the remaining arguments onto the stack in reverse order
+      for i = stack_args.length() - 1; i >= 0; i = i - 1 {
+        let asm_arg = stack_args[i].asm()
+        match asm_arg {
+          Reg(_) | Imm(_) => {
+            self.emit(Push(asm_arg))
+          }
+          _ => {
+            // if the argument is in memory, load it into a register first before pushing it
+            self.emit(Mov(~src=asm_arg, ~dst=Reg(AX)))
+            self.emit(Push(Reg(AX)))
+          }
+        }
+      }
+
+      self.emit(Call(name))
+
+      let bytes_to_remove = 8 * stack_args.length() + stack_padding
+
+      if bytes_to_remove > 0 {
+        self.emit(DeallocateStack(~size=bytes_to_remove))
+      }
+
+      // retrieve the return value
+      let dst = dst.asm()
+      self.emit(Mov(~src=Reg(AX), ~dst))
+    }
+  }
+}
+
+fn align_to_16_bytes(size: Int) -> Int {
+  let remainder = size % 16
+
+  if remainder == 0 {
+    size
+  } else {
+    size + 16 - remainder
   }
 }
 
@@ -140,6 +200,23 @@ pub fn asm(self: TacFunctionDef) -> AsmFunctionDef!AsmBuilderError {
   // placeholder for stack allocation
   builder.emit(AllocateStack(~size=0))
 
+  // copy arguments to the stack
+  for i, param in self.params {
+    // the first 6 arguments are passed in registers
+    if i < 6 {
+      let dst = Pseudo(param)
+      let src = Reg(arg_regs[i])
+      builder.emit(Mov(~src, ~dst))
+    } else {
+      // the remaining arguments are passed on the stack
+      // but we need to load them into the current stack frame
+      let dst = Pseudo(param)
+      // offset by 16 bytes for the return address and base pointer
+      let offset = 16 + 8 * (i - 6)
+      builder.emit(Mov(~src=Stack(offset), ~dst))
+    }
+  }
+
   for inst in self.body {
     builder.convert_inst!(inst)
   }
@@ -147,12 +224,14 @@ pub fn asm(self: TacFunctionDef) -> AsmFunctionDef!AsmBuilderError {
   let pass1 = ReplacePseudoRegsPass::new()
   let insts1 = pass1.run(builder.instructions)
 
-  // replace the placeholder with the actual stack allocation
-  insts1[0] = AllocateStack(~size=pass1.stack_offset)
+  let aligned_stack_size = align_to_16_bytes(pass1.stack_offset.abs())
+
+  // replace the placeholder with the actual stack allocation, aligned to 16 bytes
+  insts1[0] = AllocateStack(~size=aligned_stack_size)
 
   let insts2 = FixUpPass::run(insts1)
 
-  { name: self.name, body: insts2 }
+  { name: self.name, body: insts2, stack_size: pass1.stack_offset }
 }
 
 pub fn asm(self: TacProgram) -> AsmProgram!AsmBuilderError {

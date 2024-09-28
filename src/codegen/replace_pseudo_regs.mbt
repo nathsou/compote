@@ -59,6 +59,12 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst {
     }
     Label(name) => Label(name)
     AllocateStack(~size) => AllocateStack(~size)
+    DeallocateStack(~size) => DeallocateStack(~size)
+    Push(operand) => {
+      let operand = self.rewrite_operand(operand)
+      Push(operand)
+    }
+    Call(name) => Call(name)
     Ret => Ret
   }
 }

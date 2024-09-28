@@ -18,10 +18,10 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
     ]
     // if the shift amount is an immediate, it can be used directly
     Binary(~op=Shl | Sal, ~src=Imm(_), ~dst=_) => [inst]
-    // otherwise, the shift amount must be stored in the cl registern 
+    // otherwise, the shift amount must be stored in the cl register
     Binary(~op=Shl | Sal as op, ~src, ~dst) => [
-      Mov(~src, ~dst=Reg(CL)),
-      Binary(~op, ~src=RegSize(CL, Byte), ~dst),
+      Mov(~src, ~dst=Reg(CX)),
+      Binary(~op, ~src=RegSize(CX, Byte), ~dst),
     ]
     // imul can't use a memory address as destination
     Binary(~op=Mul, ~src, ~dst=Stack(dst)) => [

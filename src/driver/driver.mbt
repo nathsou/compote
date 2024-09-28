@@ -43,36 +43,36 @@ fn parse_stage(source: String) -> @parse.Program!CompilerError {
   }
 }
 
-fn validate_stage(source: String) -> @parse.Program!CompilerError {
+fn validate_stage(source: String) -> (@parse.Program, Map[String, @validate.SymbolTableEntry])!CompilerError {
   let program = parse_stage!(source)
 
   match @validate.validated?(program) {
-    Ok(validated) => validated
+    Ok(res) => res
     Err(error) => raise Validator(error)
   }
 }
 
-fn tac_gen_stage(source: String) -> @codegen.TacProgram!CompilerError {
-  let program = validate_stage!(source)
+fn tac_gen_stage(source: String) -> (@codegen.TacProgram, Map[String, @validate.SymbolTableEntry])!CompilerError {
+  let (program, symbols) = validate_stage!(source)
 
   match @codegen.convert_prog?(program) {
-    Ok(tac) => tac
+    Ok(tac) => (tac, symbols)
     Err(error) => raise TacBuilder(error)
   }
 }
 
-fn codegen_stage(source: String) -> @codegen.AsmProgram!CompilerError {
-  let program = tac_gen_stage!(source)
+fn codegen_stage(source: String) -> (@codegen.AsmProgram, Map[String, @validate.SymbolTableEntry])!CompilerError {
+  let (program, symbols) = tac_gen_stage!(source)
   
   match program.asm?() {
-    Ok(asm) => asm
+    Ok(asm) => (asm, symbols)
     Err(error) => raise AsmBuilder(error)
   }
 }
 
 fn assemble(source: String, ~os: @codegen.OperatingSystem) -> String!CompilerError {
-  let program = codegen_stage!(source)
-  let emitter = @codegen.Emitter::new(os)
+  let (program, symbols) = codegen_stage!(source)
+  let emitter = @codegen.Emitter::new(os, symbols)
   match emitter.emit_program?(program) {
     Ok(_) => Show::to_string(emitter)
     Err(error) => raise Emitter(error)
@@ -104,11 +104,11 @@ fn compile(stage: DriverStage, os: @codegen.OperatingSystem) -> String!CompilerE
       Show::to_string(program)
     }
     Validate => {
-      let program = validate_stage!(source)
+      let (program, _) = validate_stage!(source)
       Show::to_string(program)
     }
     Tacky => {
-      let program = tac_gen_stage!(source)
+      let (program, _) = tac_gen_stage!(source)
       Show::to_string(program)
     }
     CodeGen => {

@@ -2,6 +2,7 @@
 pub struct Emitter {
   os: OperatingSystem
   lines: Array[String]
+  symbols: Map[String, @validate.SymbolTableEntry]
   mut indentation: Int
 }
 
@@ -9,8 +10,8 @@ pub type! EmitterError {
   UnexpectedPseudoReg(String)
 } derive(Show)
 
-pub fn Emitter::new(os: OperatingSystem) -> Emitter {
-  { os, lines: [], indentation: 0 }
+pub fn Emitter::new(os: OperatingSystem, symbols: Map[String, @validate.SymbolTableEntry]) -> Emitter {
+  { os, lines: [], indentation: 0, symbols }
 }
 
 fn symbol(self: OperatingSystem, name: String) -> String {
@@ -59,22 +60,47 @@ fn asm(self: AsmOperand, size: RegSize) -> String!EmitterError {
       AX => match size {
         Byte => "%al"
         Long => "%eax"
+        Quad => "%rax"
       }
       DX => match size {
         Byte => "%dl"
         Long => "%edx"
+        Quad => "%rdx"
+      }
+      CX => match size {
+        Byte => "%cl"
+        Long => "%ecx"
+        Quad => "%rcx"
+      }
+      DI => match size {
+        Byte => "%dil"
+        Long => "%edi"
+        Quad => "%rdi"
+      }
+      SI => match size {
+        Byte => "%sil"
+        Long => "%esi"
+        Quad => "%rsi"
+      }
+      R8 => match size {
+        Byte => "%r8b"
+        Long => "%r8d"
+        Quad => "%r8"
+      }
+      R9 => match size {
+        Byte => "%r9b"
+        Long => "%r9d"
+        Quad => "%r9"
       }
       R10 => match size {
         Byte => "%r10b"
         Long => "%r10d"
+        Quad => "%r10"
       }
       R11 => match size {
         Byte => "%r11b"
         Long => "%r11d"
-      }
-      CL => match size {
-        Byte => "%cl"
-        Long => "%ecx"
+        Quad => "%r11"
       }
     }
     RegSize(reg, size) => Reg(reg).asm!(size)
@@ -151,6 +177,26 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
     }
     AllocateStack(~size) => {
       self.emit("subq $\{size.abs()}, %rsp")
+    }
+    DeallocateStack(~size) => {
+      self.emit("addq $\{size.abs()}, %rsp")
+    }
+    Push(operand) => {
+      self.emit("pushq \{operand.asm!(Quad)}")
+    }
+    Call(label) => {
+      let suffix = match self.os {
+        Linux => {
+          // add Procedure Linkage Table suffix for external functions on Linux
+          match self.symbols.get(label) {
+            Some(Function(~defined=false, ~ty=_)) => "@PLT"
+            _ => ""
+          }
+        }
+        MacOS => ""
+      }
+
+      self.emit("call \{self.os.symbol(label)}\{suffix}")
     }
     Ret => {
       // function epilogue

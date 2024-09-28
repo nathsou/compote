@@ -1,6 +1,6 @@
 
 pub enum AsmReg {
-  AX; DX; R10; R11; CL
+  AX; CX; DX; DI; SI; R8; R9; R10; R11
 }
 
 pub enum CondCode {
@@ -8,7 +8,7 @@ pub enum CondCode {
 }
 
 pub enum RegSize {
-  Byte; Long
+  Byte; Long; Quad
 }
 
 pub enum AsmOperand {
@@ -41,12 +41,16 @@ pub enum AsmInst {
   SetCond(~cond: CondCode, ~dst: AsmOperand)
   Label(String)
   AllocateStack(~size: Int)
+  DeallocateStack(~size: Int)
+  Push(AsmOperand)
+  Call(String)
   Ret
 }
 
 pub struct AsmFunctionDef {
   name: String
   body: Array[AsmInst]
+  stack_size: Int
 }
 
 pub enum OperatingSystem {

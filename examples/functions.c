@@ -1,9 +1,14 @@
-int f(int n);
+int fib(int arg0);
 
 int main(void) {
-  return f(11);
+  int n = 11;
+  return fib(n);
 }
 
-int f(int n) {
-  return n * n;
+int fib(int n) {
+  if (n == 0 || n == 1) {
+      return n;
+  } else {
+      return fib(n - 1) + fib(n - 2);
+  }
 }
