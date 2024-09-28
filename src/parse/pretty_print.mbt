@@ -33,7 +33,7 @@ fn write_string(self: PrettyPrinter, s: String) -> Unit {
 pub impl Show for Type with output(self, logger: Logger) {
   logger.write_string(match self {
     Int => "int"
-    Void => "void"
+    FunType(~param_count) => "fun<int " + param_count.to_string() + ">"
   })
 }
 
@@ -219,7 +219,7 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
           self.write_string(";")
         }
         InitDecl(decl) => {
-          self.show_decl(decl)
+          self.show_decl(VarDecl(decl))
         }
         InitExpr(expr) => {
           self.write_string(show_expr(expr) + ";")
@@ -268,7 +268,11 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
 }
 
 pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
-  self.emit(Show::to_string(func.return_type) + " " + func.name + "()" + if func.body.is_empty() {
+  let params = func.params.map(fn(param) {
+    Show::to_string(param.ty) + " " + param.name
+  }).join(", ")
+
+  self.emit(Show::to_string(func.return_type) + " " + func.name + "(" + params + ")" + if func.body.is_empty() {
     ";"
   } else {
     " {"

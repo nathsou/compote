@@ -280,7 +280,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
 
       match init {
         InitEmpty => ()
-        InitDecl(decl) => self.convert_decl!(decl)
+        InitDecl(decl) => self.convert_decl!(@parse.VarDecl(decl))
         InitExpr(expr) => { let _ = self.convert_expr!(expr) }
       }
 

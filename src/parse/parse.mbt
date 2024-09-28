@@ -75,10 +75,6 @@ fn parse_type(self: Parser) -> Type!ParserError {
       self.advance()
       Int
     }
-    Void => {
-      self.advance()
-      Void
-    }
     _ => raise ExpectedType(token)
   }
 }
@@ -340,7 +336,7 @@ fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
     self.advance()
     InitEmpty
   } else if self.matches(Int) {
-    InitDecl(VarDecl(self.parse_variable_decl!()))
+    InitDecl(self.parse_variable_decl!())
   } else {
     let expr = self.parse_expr!()
     self.expect!(Semicolon)

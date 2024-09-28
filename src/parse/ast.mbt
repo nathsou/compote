@@ -1,6 +1,7 @@
 
 pub enum Type {
-  Int; Void
+  Int
+  FunType(~param_count: Int)
 } derive(Eq)
 
 pub enum Constant {
@@ -42,7 +43,7 @@ pub enum BlockItem {
 
 pub enum ForInit {
   InitEmpty
-  InitDecl(Decl)
+  InitDecl(VariableDecl)
   InitExpr(Expr)
 }
 

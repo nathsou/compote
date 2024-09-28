@@ -1,16 +1,17 @@
 
-pub struct VariableResolutionPass {
+// A pass that resolves all the names and labels in the program
+pub struct NameResolutionPass {
   mut next_var_id: Int
   mut next_goto_label_id: Int
   mut next_loop_label_id: Int
   mut next_switch_label_id: Int
 }
 
-pub fn VariableResolutionPass::new() -> VariableResolutionPass {
+pub fn NameResolutionPass::new() -> NameResolutionPass {
   { next_var_id: 0, next_goto_label_id: 0, next_loop_label_id: 0, next_switch_label_id: 0 }
 }
 
-pub type! VariableResolutionError {
+pub type! NameResolutionError {
   VariableAlreadyDeclared(String)
   UndeclaredVariable(String)
   InvalidLvalue(String)
@@ -23,6 +24,9 @@ pub type! VariableResolutionError {
   CaseExprMustBeConstant
   DuplicateCase(@parse.Constant)
   MultipleDefaultInSwitch
+  UndeclaredFunction(String)
+  DuplicateFunctionDeclaration(String)
+  FunctionDefinitionShouldBeTopLevel(String)
   Unreachable(String)
 } derive(Show)
 
@@ -33,18 +37,28 @@ fn is_lvalue(expr: @parse.Expr) -> Bool {
   }
 }
 
+enum IdentifierLinkage {
+  // Internal
+  External
+}
+
+struct ResolvedIdentifier {
+  new_name: String
+  linkage: IdentifierLinkage?
+}
+
 struct Env {
-  variables: Scope[String]
+  identifiers: Scope[ResolvedIdentifier]
   goto_labels: Map[String, String]
   stack: ResolutionStack
 }
 
 fn Env::new() -> Env {
-  { variables: Scope::new(), goto_labels: {}, stack: ResolutionStack::new() }
+  { identifiers: Scope::new(), goto_labels: {}, stack: ResolutionStack::new() }
 }
 
 fn child(self: Env) -> Env {
-  { variables: self.variables.child(), goto_labels: self.goto_labels, stack: self.stack }
+  { identifiers: self.identifiers.child(), goto_labels: self.goto_labels, stack: self.stack }
 }
 
 fn push(self: Env, entry: ResolutionStackEntry) -> Unit {
@@ -55,23 +69,27 @@ fn pop(self: Env) -> Unit {
   let _ = self.stack.pop()
 }
 
-fn next_loop_label(self: VariableResolutionPass, prefix: String) -> String {
+fn is_top_level(self: Env) -> Bool {
+  self.identifiers.parent.is_empty()
+}
+
+fn next_loop_label(self: NameResolutionPass, prefix: String) -> String {
   let label_name = prefix + "." + self.next_loop_label_id.to_string()
   self.next_loop_label_id += 1
   label_name
 }
 
-fn next_switch_entry(self: VariableResolutionPass, prefix: String) -> String {
+fn next_switch_entry(self: NameResolutionPass, prefix: String) -> String {
   let label_name = prefix + "." + self.next_switch_label_id.to_string()
   self.next_switch_label_id += 1
   label_name
 }
 
-fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, env: Env) -> @parse.Expr!VariableResolutionError {
+fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse.Expr!NameResolutionError {
   match expr {
     Variable(name) => {
-      match env.variables.resolve(name) {
-        Some(new_name) => @parse.Variable(new_name)
+      match env.identifiers.resolve(name) {
+        Some({ new_name, linkage: _ }) => @parse.Variable(new_name)
         None => raise UndeclaredVariable(name)
       }
     }
@@ -104,18 +122,23 @@ fn resolve_expr(self: VariableResolutionPass, expr: @parse.Expr, env: Env) -> @p
       )
     }
     Call(~name, ~args) => {
-      let new_args = []
+      match env.identifiers.resolve(name) {
+        Some({ new_name, linkage: _ }) => {
+          let new_args = []
 
-      for arg in args {
-        new_args.push(self.resolve_expr!(arg, env))
+          for arg in args {
+            new_args.push(self.resolve_expr!(arg, env))
+          }
+
+          @parse.Call(~name=new_name, ~args=new_args)
+        }
+        None => raise UndeclaredFunction(name)
       }
-
-      @parse.Call(~name, ~args=new_args)
     }
   }
 }
 
-fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse.Stmt!VariableResolutionError {
+fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse.Stmt!NameResolutionError {
   match stmt {
     Return(expr) => Return(self.resolve_expr!(expr, env))
     Expression(expr) => Expression(self.resolve_expr!(expr, env))
@@ -147,7 +170,7 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
     }
     Break(~label) => {
       match label {
-        Some(_) => raise Unreachable("break with label before resolution")
+        Some(_) => raise NameResolutionError::Unreachable("break with label before resolution")
         None => {
           match env.stack.peek() {
             Some(Loop(label) | Switch({ label, cases: _, has_default: _ })) => Break(~label=Some(label))
@@ -158,7 +181,7 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
     }
     Continue(~label) => {
       match label {
-        Some(_) => raise Unreachable("continue with label before resolution")
+        Some(_) => raise NameResolutionError::Unreachable("continue with label before resolution")
         None => {
           match env.stack.get_innermost_loop_label() {
             Some(loop_label) => Continue(~label=Some(loop_label))
@@ -191,8 +214,7 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
       let new_init: @parse.ForInit = match init {
         InitEmpty => InitEmpty
         InitDecl(decl) => {
-          let new_decl = self.resolve_decl!(decl, for_env)
-          InitDecl(new_decl)
+          InitDecl(self.resolve_variable_decl!(decl, for_env))
         }
         InitExpr(expr) => {
           let new_expr = self.resolve_expr!(expr, for_env)
@@ -269,38 +291,53 @@ fn resolve_stmt(self: VariableResolutionPass, stmt: @parse.Stmt, env: Env) -> @p
   }
 }
 
-fn resolve_decl(self: VariableResolutionPass, decl: @parse.Decl, env: Env) -> @parse.Decl!VariableResolutionError {
+fn resolve_variable_decl(self: NameResolutionPass, decl: @parse.VariableDecl, env: Env) -> @parse.VariableDecl!NameResolutionError {
+  let { ty, name, value } = decl
+  let new_name = "var." + name + "." + self.next_var_id.to_string()
+
+  match env.identifiers.declare?(name, { new_name, linkage: None }) {
+    Ok(_) => ()
+    Err(MemberAlreadyDeclared) => raise VariableAlreadyDeclared(name)
+  }
+
+  self.next_var_id += 1
+
+  match value {
+    Some(expr) => {
+      let new_expr = self.resolve_expr!(expr, env)
+      { ty, name: new_name, value: Some(new_expr) }
+    }
+    None => { ty, name: new_name, value: None }
+  }
+}
+
+fn resolve_decl(self: NameResolutionPass, decl: @parse.Decl, env: Env) -> @parse.Decl!NameResolutionError {
   match decl {
     VarDecl({ ty, name, value }) => {
-      let new_name = "var." + name + "." + self.next_var_id.to_string()
-
-      match env.variables.declare?(name, new_name) {
-        Ok(_) => ()
-        Err(MemberAlreadyDeclared) => raise VariableAlreadyDeclared(name)
-      }
-
-      self.next_var_id += 1
-
-      match value {
-        Some(expr) => {
-          let new_expr = self.resolve_expr!(expr, env)
-          VarDecl({ ty, name: new_name, value: Some(new_expr) })
-        }
-        None => VarDecl({ ty, name: new_name, value: None })
-      }
+      VarDecl(self.resolve_variable_decl!({ ty, name, value }, env))
     }
-    FunDecl({ return_type, name, params, body }) => {
-      let new_body = match body {
-        Some(body) => Some(self.resolve_block!(body, env))
-        None => None
+    FunDecl(decl) => {
+      if not(decl.body.is_empty()) && not(env.is_top_level()) {
+        raise FunctionDefinitionShouldBeTopLevel(decl.name)
       }
 
-      FunDecl({ return_type, name, params, body: new_body })
+      FunDecl(self.resolve_function_decl!(decl, env))
     }
   }
 }
 
-fn resolve_block(self: VariableResolutionPass, block: Array[@parse.BlockItem], env: Env) -> Array[@parse.BlockItem]!VariableResolutionError {
+fn resolved_param(self: NameResolutionPass, param: @parse.FunctionParam, env: Env) -> @parse.FunctionParam!NameResolutionError {
+  let new_name = "param." + param.name + "." + self.next_var_id.to_string()
+
+  match env.identifiers.declare?(param.name, { new_name, linkage: None }) {
+    Ok(_) => ()
+    Err(MemberAlreadyDeclared) => raise VariableAlreadyDeclared(param.name)
+  }
+
+  { ty: param.ty, name: new_name }
+}
+
+fn resolve_block(self: NameResolutionPass, block: Array[@parse.BlockItem], env: Env) -> Array[@parse.BlockItem]!NameResolutionError {
   let new_block = []
 
   for item in block {
@@ -319,7 +356,7 @@ fn resolve_block(self: VariableResolutionPass, block: Array[@parse.BlockItem], e
   new_block
 }
 
-fn collect_block_labels(self: VariableResolutionPass, block: Array[@parse.BlockItem], labels: Map[String, String]) -> Unit!VariableResolutionError {
+fn collect_block_labels(self: NameResolutionPass, block: Array[@parse.BlockItem], labels: Map[String, String]) -> Unit!NameResolutionError {
   for item in block {
     match item {
       Decl(_) => ()
@@ -328,7 +365,7 @@ fn collect_block_labels(self: VariableResolutionPass, block: Array[@parse.BlockI
   }
 }
 
-fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, labels: Map[String, String]) -> Unit!VariableResolutionError {
+fn collect_stmt_labels(self: NameResolutionPass, stmt: @parse.Stmt, labels: Map[String, String]) -> Unit!NameResolutionError {
   match stmt {
     Return(_) => ()
     Expression(_) => ()
@@ -375,7 +412,7 @@ fn collect_stmt_labels(self: VariableResolutionPass, stmt: @parse.Stmt, labels: 
   }
 }
 
-fn collect_function_def_labels(self: VariableResolutionPass, func: @parse.FunctionDecl, labels: Map[String, String]) -> Unit!VariableResolutionError {
+fn collect_function_def_labels(self: NameResolutionPass, func: @parse.FunctionDecl, labels: Map[String, String]) -> Unit!NameResolutionError {
   match func.body {
     None => ()
     Some(body) => self.collect_block_labels!(body, labels)
@@ -383,22 +420,40 @@ fn collect_function_def_labels(self: VariableResolutionPass, func: @parse.Functi
 }
 
 // Collect all the labels declared in this function (a goto can reference a label declared later in the function)
-fn resolve_function_def(self: VariableResolutionPass, func: @parse.FunctionDecl) -> @parse.FunctionDecl!VariableResolutionError {
-  let env = Env::new()
-  self.collect_function_def_labels!(func, env.goto_labels)
-  let new_body = match func.body {
-    Some(body) => Some(self.resolve_block!(body, env))
+fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, env: Env) -> @parse.FunctionDecl!NameResolutionError {
+  let { return_type, name, params, body } = func
+  if env.identifiers.contains_local(name) {
+    match env.identifiers.resolve(name) {
+      Some({ new_name: _, linkage: None }) => raise DuplicateFunctionDeclaration(name)
+      _ => ()
+    }
+  }
+
+  env.identifiers.declare_shadowing(name, { new_name: name, linkage: Some(External) })
+
+  let body_env = env.child()
+  let new_params = []
+
+  for param in params {
+    new_params.push(self.resolved_param!(param, body_env))
+  }
+
+  let new_body = match body {
+    Some(body) => {
+      Some(self.resolve_block!(body, body_env))
+    }
     None => None
   }
 
-  { return_type: func.return_type, name: func.name, params: func.params, body: new_body }
+  { return_type, name, params: new_params, body: new_body }
 }
 
-pub fn resolved(self: VariableResolutionPass, program: @parse.Program) -> @parse.Program!VariableResolutionError {
+pub fn resolved(self: NameResolutionPass, program: @parse.Program) -> @parse.Program!NameResolutionError {
   let functions = []
+  let env = Env::new()
 
   for func in program.functions {
-    let new_func = self.resolve_function_def!(func)
+    let new_func = self.resolve_function_decl!(func, env)
     functions.push(new_func)
   }
 
