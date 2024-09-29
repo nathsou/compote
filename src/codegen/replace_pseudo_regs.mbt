@@ -1,25 +1,36 @@
 pub struct ReplacePseudoRegsPass {
   pseudo_reg_offsets: Map[String, Int]
+  symbols: Map[String, @validate.SymbolTableEntry]
   mut stack_offset: Int
 }
 
-pub fn ReplacePseudoRegsPass::new() -> ReplacePseudoRegsPass {
-  { pseudo_reg_offsets: {}, stack_offset: 0 }
+pub fn ReplacePseudoRegsPass::new(symbols: Map[String, @validate.SymbolTableEntry]) -> ReplacePseudoRegsPass {
+  { pseudo_reg_offsets: {}, symbols, stack_offset: 0 }
 }
 
 fn rewrite_operand(self: ReplacePseudoRegsPass, operand: AsmOperand) -> AsmOperand {
   match operand {
     Pseudo(name) => {
-      let offset = match self.pseudo_reg_offsets.get(name) {
-        Some(offset) => offset
-        None => {
-          self.stack_offset -= 4
-          self.pseudo_reg_offsets.set(name, self.stack_offset)
-          self.stack_offset
-        }
+      let is_static = match self.symbols.get(name) {
+        Some(Variable(~ty=_, ~attributes=StaticAttr(_))) => true
+        _ => false
       }
-      
-      Stack(offset)
+
+      if is_static {
+        Data(name)
+      } else {
+        let offset = match self.pseudo_reg_offsets.get(name) {
+          Some(offset) => offset
+          None => {
+            self.stack_offset -= 4
+            self.pseudo_reg_offsets.set(name, self.stack_offset)
+            self.stack_offset
+          }
+        }
+        
+        Stack(offset)
+      }
+
     }
     _ => operand
   }

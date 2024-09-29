@@ -21,6 +21,13 @@ fn symbol(self: OperatingSystem, name: String) -> String {
   }
 }
 
+fn align(self: OperatingSystem, n: Int) -> String {
+  match self {
+    Linux => ".balign \{n}" // could also use .align directive
+    MacOS => ".balign \{n}"
+  }
+}
+
 fn label(self: OperatingSystem, name: String) -> String {
   match self {
     Linux => ".L" + name
@@ -106,6 +113,7 @@ fn asm(self: AsmOperand, size: RegSize) -> String!EmitterError {
     RegSize(reg, size) => Reg(reg).asm!(size)
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
+    Data(name) => "\{name}(%rip)"
   }
 }
 
@@ -189,8 +197,8 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
         Linux => {
           // add Procedure Linkage Table suffix for external functions on Linux
           match self.symbols.get(label) {
-            Some(Function(~defined=false, ~ty=_)) => "@PLT"
-            _ => ""
+            Some(_) => ""
+            _ => "@PLT"
           }
         }
         MacOS => ""
@@ -209,7 +217,12 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
 
 fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit!EmitterError {
   let name = self.os.symbol(f.name)
-  self.emit(".globl \{name}")
+
+  if f.global {
+    self.emit(".globl \{name}")
+  }
+
+  self.emit(".text")
   self.emit("\{name}:")
   self.indentation += 1
 
@@ -224,7 +237,32 @@ fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit!EmitterError {
   self.indentation -= 1
 }
 
+fn emit_static_variable_def(self: Emitter, var: AsmStaticVarDef) -> Unit {
+  let { name, global, init } = var
+  let name = self.os.symbol(name)
+
+  if global {
+    self.emit(".globl \{name}")
+  }
+
+  if init == 0 {
+    self.emit(".bss")
+    self.emit(self.os.align(4))
+    self.emit("\{name}:")
+    self.emit(".zero 4")
+  } else {
+    self.emit(".data")
+    self.emit(self.os.align(4))
+    self.emit("\{name}:")
+    self.emit(".long \{init}")
+  }
+}
+
 pub fn emit_program(self: Emitter, program: AsmProgram) -> Unit!EmitterError {
+  for v in program.static_vars {
+    self.emit_static_variable_def(v)
+  }
+
   for f in program.functions {
     self.emit_function_def!(f)
   }

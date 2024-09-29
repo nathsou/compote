@@ -10,6 +10,8 @@ pub type! ParserError {
   ExpectedExpr(Token)
   EmptyParamListNotSupportedUseVoidInstead
   TrailingComma
+  InvalidTypeSpecifier
+  InvalidStorageClassSpecifier
 } derive(Show)
 
 pub fn Parser::new(tokens: Array[Token]) -> Parser {
@@ -40,6 +42,10 @@ fn expect(self: Parser, expected: Token) -> Unit!ParserError {
 
 fn matches(self: Parser, token: Token) -> Bool {
   self.peek() == token
+}
+
+fn matches_predicate(self: Parser, predicate: (Token) -> Bool) -> Bool {
+  predicate(self.peek())
 }
 
 fn consumes(self: Parser, token: Token) -> Bool {
@@ -335,7 +341,7 @@ fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
   let init = if self.matches(Semicolon) {
     self.advance()
     InitEmpty
-  } else if self.matches(Int) {
+  } else if self.matches_predicate(Token::is_specifier) {
     InitDecl(self.parse_variable_decl!())
   } else {
     let expr = self.parse_expr!()
@@ -392,19 +398,85 @@ fn parse_switch_stmt(self: Parser) -> Stmt!ParserError {
 }
 
 fn parse_block_item(self: Parser) -> BlockItem!ParserError {
-  match self.peek() {
-    Int => Decl(self.parse_decl!())
-    _ => Stmt(self.parse_stmt!())
+  if self.matches_predicate(Token::is_specifier) {
+    Decl(self.parse_decl!())
+  } else {
+    Stmt(self.parse_stmt!())
   }
 }
 
-fn parse_variable_decl(self: Parser) -> VariableDecl!ParserError {
-  let ty = self.parse_type!()
-  let name = self.parse_identifier!()
-  self.parse_variable_decl_rhs!(ty, name)
+enum Specifier {
+  TypeSpecifier(Type)
+  StorageClassSpecifier(StorageClass)
 }
 
-fn parse_variable_decl_rhs(self: Parser, ty: Type, name: String) -> VariableDecl!ParserError {
+fn parse_specifiers(self: Parser) -> Array[Specifier] {
+  let specifiers = []
+
+  while true {
+    match self.peek() {
+      Int => {
+        self.advance()
+        specifiers.push(TypeSpecifier(Int))
+      }
+      Extern => {
+        self.advance()
+        specifiers.push(StorageClassSpecifier(Extern))
+      }
+      Static => {
+        self.advance()
+        specifiers.push(StorageClassSpecifier(Static))
+      }
+      _ => break
+    }
+  }
+
+  specifiers
+}
+
+fn parse_type_and_storage_class(specifiers: Array[Specifier]) -> (Type, StorageClass?)!ParserError {
+  let types = []
+  let storage_classes = []
+
+  for specifier in specifiers {
+    match specifier {
+      TypeSpecifier(ty) => types.push(ty)
+      StorageClassSpecifier(storage_class) => storage_classes.push(storage_class)
+    }
+  }
+
+  if types.length() != 1 {
+    raise InvalidTypeSpecifier
+  }
+
+  if storage_classes.length() > 1 {
+    raise InvalidStorageClassSpecifier
+  }
+
+  let ty = types[0]
+  let storage_class = if storage_classes.length() == 1 {
+    Some(storage_classes[0])
+  } else {
+    None
+  }
+
+  (ty, storage_class)
+}
+
+fn parse_decl_lhs(self: Parser) -> (StorageClass?, Type, String)!ParserError {
+  let specifiers = self.parse_specifiers()
+  let (ty, storage_class) = parse_type_and_storage_class!(specifiers)
+  let name = self.parse_identifier!()
+
+  (storage_class, ty, name)
+}
+
+fn parse_variable_decl(self: Parser) -> VariableDecl!ParserError {
+  let (storage_class, ty, name) = self.parse_decl_lhs!()
+  self.parse_variable_decl_rhs!(storage_class, ty, name)
+}
+
+fn parse_variable_decl_rhs(self: Parser, storage_class: StorageClass?, ty: Type, name: String) -> VariableDecl!ParserError {
   let value = if self.consumes(Equal) {
     Some(self.parse_expr!())
   } else {
@@ -413,7 +485,7 @@ fn parse_variable_decl_rhs(self: Parser, ty: Type, name: String) -> VariableDecl
 
   self.expect!(Semicolon)
 
-  { ty, name, value }
+  { ty, name, value, storage_class }
 }
 
 fn parse_param_list(self: Parser) -> Array[FunctionParam]!ParserError {
@@ -441,12 +513,11 @@ fn parse_param_list(self: Parser) -> Array[FunctionParam]!ParserError {
 }
 
 fn parse_function_decl(self: Parser) -> FunctionDecl!ParserError {
-  let return_ty = self.parse_type!()
-  let name = self.parse_identifier!()
-  self.parse_function_decl_rhs!(return_ty, name)
+  let (storage_class, return_ty, name) = self.parse_decl_lhs!()
+  self.parse_function_decl_rhs!(storage_class, return_ty, name)
 }
 
-fn parse_function_decl_rhs(self: Parser, return_type: Type, name: String) -> FunctionDecl!ParserError {
+fn parse_function_decl_rhs(self: Parser, storage_class: StorageClass?, return_type: Type, name: String) -> FunctionDecl!ParserError {
   self.expect!(Lparen)
   let params = self.parse_param_list!()
   self.expect!(Rparen)
@@ -457,17 +528,16 @@ fn parse_function_decl_rhs(self: Parser, return_type: Type, name: String) -> Fun
     Some(self.parse_block!())
   }
 
-  { return_type, name, params, body }
+  { return_type, name, params, body, storage_class }
 }
 
 fn parse_decl(self: Parser) -> Decl!ParserError {
-  let ty = self.parse_type!()
-  let name = self.parse_identifier!()
+  let (storage_class, ty, name) = self.parse_decl_lhs!()
 
   if self.matches(Lparen) {
-    FunDecl(self.parse_function_decl_rhs!(ty, name))
+    FunDecl(self.parse_function_decl_rhs!(storage_class, ty, name))
   } else {
-    VarDecl(self.parse_variable_decl_rhs!(ty, name))
+    VarDecl(self.parse_variable_decl_rhs!(storage_class, ty, name))
   }
 }
 
@@ -486,12 +556,12 @@ fn parse_block(self: Parser) -> Array[BlockItem]!ParserError {
 }
 
 pub fn parse(self: Parser) -> Program!ParserError {
-  let functions = []
+  let decls = []
 
   while self.index < self.tokens.length() {
-    let decl = self.parse_function_decl!()
-    functions.push(decl)
+    let decl = self.parse_decl!()
+    decls.push(decl)
   }
 
-  { functions, }
+  { decls, }
 }

@@ -88,6 +88,13 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
   })
 }
 
+pub impl Show for StorageClass with output(self, logger: Logger) {
+  logger.write_string(match self {
+    Static => "static"
+    Extern => "extern"
+  })
+}
+
 pub impl Show for Constant with output(self, logger: Logger) {
   logger.write_string(match self {
     IntConst(n) => n.to_string()
@@ -114,13 +121,18 @@ pub fn show_expr(expr: Expr) -> String {
 
 fn show_decl(self: PrettyPrinter, decl: Decl) -> Unit {
   match decl {
-    VarDecl({ ty, name, value }) => {
+    VarDecl({ ty, name, value, storage_class }) => {
+      let storage_class_str = match storage_class {
+        Some(storage_class) => Show::to_string(storage_class) + " "
+        None => ""
+      }
+      
       match value {
         Some(expr) => {
-          self.emit(Show::to_string(ty) + " " + name + " = " + show_expr(expr) + ";")
+          self.emit(storage_class_str + Show::to_string(ty) + " " + name + " = " + show_expr(expr) + ";")
         }
         None => {
-          self.emit(Show::to_string(ty) + " " + name + ";")
+          self.emit(storage_class_str + Show::to_string(ty) + " " + name + ";")
         }
       }
     }
@@ -268,11 +280,16 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
 }
 
 pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
+  let storage_class = match func.storage_class {
+    Some(storage_class) => Show::to_string(storage_class) + " "
+    None => ""
+  }
+
   let params = func.params.map(fn(param) {
     Show::to_string(param.ty) + " " + param.name
   }).join(", ")
 
-  self.emit(Show::to_string(func.return_type) + " " + func.name + "(" + params + ")" + if func.body.is_empty() {
+  self.emit(storage_class + Show::to_string(func.return_type) + " " + func.name + "(" + params + ")" + if func.body.is_empty() {
     ";"
   } else {
     " {"
@@ -292,8 +309,8 @@ pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
 }
 
 pub fn show_program(self: PrettyPrinter, program: Program) -> Unit {
-  for func in program.functions {
-    self.show_function_decl(func)
+  for decl in program.decls {
+    self.show_decl(decl)
   }
 }
 

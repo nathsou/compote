@@ -17,6 +17,7 @@ pub enum AsmOperand {
   RegSize(AsmReg, RegSize)
   Pseudo(String)
   Stack(Int)
+  Data(String)
 }
 
 pub enum AsmUnaryOp {
@@ -49,8 +50,15 @@ pub enum AsmInst {
 
 pub struct AsmFunctionDef {
   name: String
+  global: Bool
   body: Array[AsmInst]
   stack_size: Int
+}
+
+pub struct AsmStaticVarDef {
+  name: String
+  global: Bool
+  init: Int
 }
 
 pub enum OperatingSystem {
@@ -59,4 +67,5 @@ pub enum OperatingSystem {
 
 pub struct AsmProgram {
   functions: Array[AsmFunctionDef]
+  static_vars: Array[AsmStaticVarDef]
 }

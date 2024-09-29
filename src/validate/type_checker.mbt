@@ -1,7 +1,17 @@
 
+pub enum InitialValue {
+  Tentative; Initial(Int); NoInitializer
+}
+
+pub enum IdentifierAttributes {
+  FunAttr(~defined: Bool, ~global: Bool)
+  StaticAttr(~init: InitialValue, ~global: Bool)
+  LocalAttr
+}
+
 pub enum SymbolTableEntry {
-  Variable(@parse.Type)
-  Function(~ty: @parse.Type, ~defined: Bool)
+  Variable(~ty: @parse.Type, ~attributes: IdentifierAttributes)
+  Function(~ty: @parse.Type, ~attributes: IdentifierAttributes)
 }
 
 pub struct TypeChecker {
@@ -15,6 +25,14 @@ pub type! TypeCheckerError {
   IncorrectArgumentCount(~name: String, ~expected: Int, ~actual: Int)
   VariableUsedAsFunctionName(String)
   UndefinedSymbol(String)
+  StaticFunctionDeclFollowsNonStatic(String)
+  FileScopeVarNonConstantInitializer(~variable: String, ~init: @parse.Expr)
+  FunctionRedeclaredAsVariable(String)
+  ConflictingVariableLinkage(String)
+  ConflictingGlobalVariableDefinition(String)
+  InitializerOnLocalExternVarDecl(String)
+  NonConstantInitializerOnLocalStaticVar(~variable: String, ~init: @parse.Expr)
+  StorageClassNotPermittedInForLoopInitializer
   Unreachable(String)
 } derive(Show)
 
@@ -22,41 +40,138 @@ pub fn TypeChecker::new() -> TypeChecker {
   { symbols: {} }
 }
 
-pub fn check_variable_declaration(self: TypeChecker, decl: @parse.VariableDecl) -> Unit!TypeCheckerError {
-  self.symbols[decl.name] = Variable(decl.ty)
+fn check_file_scope_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> Unit!TypeCheckerError {
+  let mut initial_value = match decl.value {
+    Some(Constant(IntConst(n))) => Initial(n)
+    None => match decl.storage_class {
+      Some(Extern) => NoInitializer
+      _ => Tentative
+    }
+    Some(init) => raise FileScopeVarNonConstantInitializer(~variable=decl.name, ~init)
+  }
 
-  match decl.value {
-    Some(value) => check_expr!(self, value)
+  let mut is_global = decl.storage_class != Some(Static)
+
+  match self.symbols.get(decl.name) {
+    Some(Variable(~ty, ~attributes) | Function(~ty, ~attributes)) => {
+      if ty != Int {
+        raise FunctionRedeclaredAsVariable(decl.name)
+      }
+
+      match attributes {
+        StaticAttr(~init=prev_init, ~global=prev_global) => {
+          if decl.storage_class == Some(Extern) {
+            is_global = prev_global
+          } else if prev_global != is_global {
+            raise ConflictingVariableLinkage(decl.name)
+          }
+
+          match (prev_init, initial_value) {
+            (Initial(_), Initial(_)) => raise ConflictingGlobalVariableDefinition(decl.name)
+            (Initial(_), _) => {
+              initial_value = prev_init
+            }
+            (Tentative, Tentative | NoInitializer) => {
+              initial_value = Tentative
+            }
+            (_, Initial(_)) | (NoInitializer, _) => ()
+          }
+        }
+        _ => raise TypeCheckerError::Unreachable("file scope variable previously declared as local")
+      }
+    }
     None => ()
+  }
+
+  self.symbols[decl.name] = Variable(~ty=Int, ~attributes=StaticAttr(~init=initial_value, ~global=is_global))
+}
+
+fn check_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> Unit!TypeCheckerError {
+  match decl.storage_class {
+    Some(Extern) => {
+      if not(decl.value.is_empty()) {
+        raise InitializerOnLocalExternVarDecl(decl.name)
+      }
+
+      match self.symbols.get(decl.name) {
+        Some(Variable(~ty, ~attributes=_) | Function(~ty, ~attributes=_)) => {
+          if ty != Int {
+            raise FunctionRedeclaredAsVariable(decl.name)
+          }
+        }
+        None => {
+          self.symbols[decl.name] = Variable(~ty=Int, ~attributes=StaticAttr(~init=NoInitializer, ~global=true))
+        }
+      }
+    }
+    Some(Static) => {
+      let initial_value = match decl.value {
+        Some(Constant(IntConst(n))) => Initial(n)
+        None => Initial(0)
+        Some(init) => raise NonConstantInitializerOnLocalStaticVar(~variable=decl.name, ~init)
+      }
+
+      self.symbols[decl.name] = Variable(~ty=Int, ~attributes=StaticAttr(~init=initial_value, ~global=false))
+    }
+    None => {
+      self.symbols[decl.name] = Variable(~ty=Int, ~attributes=LocalAttr)
+
+      match decl.value {
+        Some(value) => self.check_expr!(value)
+        None => ()
+      }
+    }
   }
 }
 
-pub fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) -> Unit!TypeCheckerError {
+fn check_variable_declaration(self: TypeChecker, decl: @parse.VariableDecl, ~scope: DeclarationScope) -> Unit!TypeCheckerError {
+  match scope {
+    FileScope => self.check_file_scope_variable_decl!(decl)
+    BlockScope => self.check_local_variable_decl!(decl)
+  }
+}
+
+fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) -> Unit!TypeCheckerError {
   let fun_type = @parse.FunType(~param_count=decl.params.length())
   let has_body = not(decl.body.is_empty())
   let mut already_defined = false
+  let mut is_global = decl.storage_class != Some(Static)
 
   match self.symbols.get(decl.name) {
-    Some(Function(~ty, ~defined)) => {
-      if ty != fun_type {
-        raise IncompatibleFunctionDeclarations(~name=decl.name, ~old_decl=ty, ~new_decl=fun_type)
+    Some(Variable(~ty=prev_ty, ~attributes) | Function(~ty=prev_ty, ~attributes)) => {
+      if prev_ty != fun_type {
+        raise IncompatibleFunctionDeclarations(~name=decl.name, ~old_decl=prev_ty, ~new_decl=fun_type)
       }
 
-      already_defined = defined
+      match attributes {
+        FunAttr(~defined=prev_defined, ~global=prev_global) => {
+          already_defined = prev_defined
 
-      if already_defined && has_body {
-        raise FunctionDefinedMoreThanOnce(decl.name)
+          if already_defined && has_body {
+            raise FunctionDefinedMoreThanOnce(decl.name)
+          }
+
+          if prev_global && decl.storage_class == Some(Static) {
+            raise StaticFunctionDeclFollowsNonStatic(decl.name)
+          }
+
+          is_global = prev_global
+        }
+        _ => raise TypeCheckerError::Unreachable("function without function attributes")
       }
     }
-    _ => ()
+    None => ()
   }
 
-  self.symbols[decl.name] = Function(~ty=fun_type, ~defined=already_defined || has_body)
+  self.symbols[decl.name] = Function(
+    ~ty=fun_type,
+    attributes=FunAttr(~defined=already_defined || has_body, ~global=is_global),
+  )
 
   match decl.body {
     Some(body) => {
       for param in decl.params {
-        self.symbols[param.name] = Variable(param.ty)
+        self.symbols[param.name] = Variable(~ty=param.ty, ~attributes=LocalAttr)
       }
 
       self.check_block!(body)
@@ -65,18 +180,18 @@ pub fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) 
   }
 }
 
-pub fn check_decl(self: TypeChecker, decl: @parse.Decl) -> Unit!TypeCheckerError {
+pub fn check_decl(self: TypeChecker, decl: @parse.Decl, ~scope: DeclarationScope) -> Unit!TypeCheckerError {
   match decl {
-    VarDecl(decl) => check_variable_declaration!(self, decl)
-    FunDecl(decl) => check_function_declaration!(self, decl)
+    VarDecl(decl) => self.check_variable_declaration!(decl, ~scope)
+    FunDecl(decl) => self.check_function_declaration!(decl)
   }
 }
 
 pub fn check_block(self: TypeChecker, block: Array[@parse.BlockItem]) -> Unit!TypeCheckerError {
   for item in block {
     match item {
-      Stmt(stmt) => check_stmt!(self, stmt)
-      Decl(decl) => check_decl!(self, decl)
+      Stmt(stmt) => self.check_stmt!(stmt)
+      Decl(decl) => self.check_decl!(decl, ~scope=BlockScope)
     }
   }
 }
@@ -109,7 +224,7 @@ pub fn check_expr(self: TypeChecker, expr: @parse.Expr) -> Unit!TypeCheckerError
     }
     Call(~name, ~args) => {
       match self.symbols.get(name) {
-      Some(Function(~ty=@parse.FunType(~param_count), ~defined=_)) => {
+      Some(Function(~ty=@parse.FunType(~param_count), attributes=_)) => {
           if args.length() != param_count {
             raise IncorrectArgumentCount(~name=name, ~expected=param_count, ~actual=args.length())
           }
@@ -159,7 +274,10 @@ pub fn check_stmt(self: TypeChecker, stmt: @parse.Stmt) -> Unit!TypeCheckerError
     }
     For(~init, ~cond, ~post, ~body, ~label=_) => {
       match init {
-        InitDecl(decl) => self.check_variable_declaration!(decl)
+        InitDecl(decl) => match decl.storage_class {
+          Some(_) => raise StorageClassNotPermittedInForLoopInitializer
+          None => self.check_variable_declaration!(decl, ~scope=BlockScope)
+        }
         InitExpr(expr) => self.check_expr!(expr)
         _ => ()
       }
@@ -195,7 +313,7 @@ pub fn check_stmt(self: TypeChecker, stmt: @parse.Stmt) -> Unit!TypeCheckerError
 }
 
 pub fn check_program(self: TypeChecker, program: @parse.Program) -> Unit!TypeCheckerError {
-  for decl in program.functions {
-    self.check_function_declaration!(decl)
+  for decl in program.decls {
+    self.check_decl!(decl, ~scope=FileScope)
   }
 }

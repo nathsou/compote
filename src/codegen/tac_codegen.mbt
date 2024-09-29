@@ -9,6 +9,7 @@ let ctx: TacContext = { next_var_id: 0, next_label_id: 0 }
 pub struct TacBuilder {
   instructions: Array[TacInst]
   switch_stack: Array[TacSwitchStackEntry]
+  symbols: Map[String, @validate.SymbolTableEntry]
 }
 
 pub type! TacBuilderError {
@@ -20,12 +21,14 @@ pub type! TacBuilderError {
   CaseWithoutLabel
   CaseOutsideSwitch
   DefaultOutsideSwitch
+  Unreachable(String)
 } derive(Show)
 
-pub fn TacBuilder::new() -> TacBuilder {
+pub fn TacBuilder::new(symbols: Map[String, @validate.SymbolTableEntry]) -> TacBuilder {
   {
     instructions: [],
     switch_stack: [],
+    symbols,
   }
 }
 
@@ -403,7 +406,9 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
 
 fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit!TacBuilderError {
   match decl {
-    VarDecl({ ty: _, name, value }) => {
+    // extern and static variables are handled at the top level
+    VarDecl({ storage_class: Some(_), ty: _, name: _, value: _}) => ()
+    VarDecl({ storage_class: _, ty: _, name, value }) => {
       match value {
         Some(expr) => {
           let src = self.convert_expr!(expr)
@@ -417,8 +422,8 @@ fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit!TacBuilderError {
   }
 }
 
-fn convert_function_def(func: @parse.FunctionDecl) -> TacFunctionDef?!TacBuilderError {
-  let builder = TacBuilder::new()
+fn convert_function_def(func: @parse.FunctionDecl, symbols: Map[String, @validate.SymbolTableEntry]) -> TacFunctionDef?!TacBuilderError {
+  let builder = TacBuilder::new(symbols)
 
   match func.body {
     Some(body) => {
@@ -433,8 +438,15 @@ fn convert_function_def(func: @parse.FunctionDecl) -> TacFunctionDef?!TacBuilder
       // this handles the case where the function does not return a value
       builder.convert_stmt!(Return(Constant(IntConst(0))))
 
+      let global = match symbols.get(func.name) {
+        Some(Function(~ty=_, ~attributes=FunAttr(~global, ~defined=_))) => global
+        Some(Function(_)) => raise TacBuilderError::Unreachable("function symbol with invalid attributes")
+        _ => raise TacBuilderError::Unreachable("function symbol not found")
+      }
+
       Some({
         name: func.name,
+        global,
         params: func.params.map(fn(param) { param.name }),
         body: builder.instructions,
       })
@@ -444,15 +456,39 @@ fn convert_function_def(func: @parse.FunctionDecl) -> TacFunctionDef?!TacBuilder
   }
 }
 
-pub fn convert_prog(prog: @parse.Program) -> TacProgram!TacBuilderError {
-  let functions = []
+pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolTableEntry]) -> TacProgram!TacBuilderError {
+  let top_level: Array[TacTopLevel] = []
 
-  for func in prog.functions {
-    match convert_function_def!(func) {
-      Some(def) => functions.push(def)
-      None => ()
+  for decl in prog.decls {
+    match decl {
+      FunDecl(func) => {
+        match convert_function_def!(func, symbols) {
+          Some(def) => top_level.push(Function(def))
+          None => ()
+        }
+      }
+      VarDecl(_) => ()
     }
   }
 
-  { functions, }
+  // collect static variables
+  for name, entry in symbols {
+    match entry {
+      Variable(~ty=_, ~attributes) => {
+        match attributes {
+          StaticAttr(~init, ~global) => {
+            match init {
+              Initial(n) => top_level.push(StaticVar(~name, ~global, ~init=n))
+              Tentative => top_level.push(StaticVar(~name, ~global, ~init=0))
+              NoInitializer => ()
+            }
+          }
+          _ => ()
+        }
+      }
+      _ => ()
+    }
+  }
+
+  { top_level, }
 }

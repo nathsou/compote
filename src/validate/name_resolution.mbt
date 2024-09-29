@@ -27,6 +27,8 @@ pub type! NameResolutionError {
   UndeclaredFunction(String)
   DuplicateFunctionDeclaration(String)
   FunctionDefinitionShouldBeTopLevel(String)
+  ConflictingLocalDeclarations(String)
+  BlockScopeFunctionDeclCannotBeStatic(String)
   Unreachable(String)
 } derive(Show)
 
@@ -37,14 +39,9 @@ fn is_lvalue(expr: @parse.Expr) -> Bool {
   }
 }
 
-enum IdentifierLinkage {
-  // Internal
-  External
-}
-
 struct ResolvedIdentifier {
   new_name: String
-  linkage: IdentifierLinkage?
+  has_linkage: Bool
 }
 
 struct Env {
@@ -73,6 +70,18 @@ fn is_top_level(self: Env) -> Bool {
   self.identifiers.parent.is_empty()
 }
 
+fn next_var_name(self: NameResolutionPass, prefix: String) -> String {
+  let name = "var." + prefix + "." + self.next_var_id.to_string()
+  self.next_var_id += 1
+  name
+}
+
+fn next_param_name(self: NameResolutionPass, prefix: String) -> String {
+  let name = "param." + prefix + "." + self.next_var_id.to_string()
+  self.next_var_id += 1
+  name
+}
+
 fn next_loop_label(self: NameResolutionPass, prefix: String) -> String {
   let label_name = prefix + "." + self.next_loop_label_id.to_string()
   self.next_loop_label_id += 1
@@ -95,7 +104,7 @@ fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse
   match expr {
     Variable(name) => {
       match env.identifiers.resolve(name) {
-        Some({ new_name, linkage: _ }) => @parse.Variable(new_name)
+        Some({ new_name, has_linkage: _ }) => @parse.Variable(new_name)
         None => raise UndeclaredVariable(name)
       }
     }
@@ -129,7 +138,7 @@ fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse
     }
     Call(~name, ~args) => {
       match env.identifiers.resolve(name) {
-        Some({ new_name, linkage: _ }) => {
+        Some({ new_name, has_linkage: _ }) => {
           let new_args = []
 
           for arg in args {
@@ -220,7 +229,7 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
       let new_init: @parse.ForInit = match init {
         InitEmpty => InitEmpty
         InitDecl(decl) => {
-          InitDecl(self.resolve_variable_decl!(decl, for_env))
+          InitDecl(self.resolve_local_variable_decl!(decl, for_env))
         }
         InitExpr(expr) => {
           let new_expr = self.resolve_expr!(expr, for_env)
@@ -297,34 +306,62 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
   }
 }
 
-fn resolve_variable_decl(self: NameResolutionPass, decl: @parse.VariableDecl, env: Env) -> @parse.VariableDecl!NameResolutionError {
-  let { ty, name, value } = decl
-  let new_name = "var." + name + "." + self.next_var_id.to_string()
+fn resolve_file_scope_variable_decl(decl: @parse.VariableDecl, env: Env) -> @parse.VariableDecl {
+  env.identifiers.declare_shadowing(decl.name, { new_name: decl.name, has_linkage: true})
+  decl
+}
 
-  match env.identifiers.declare?(name, { new_name, linkage: None }) {
-    Ok(_) => ()
-    Err(MemberAlreadyDeclared) => raise VariableAlreadyDeclared(name)
+fn resolve_local_variable_decl(self: NameResolutionPass, decl: @parse.VariableDecl, env: Env) -> @parse.VariableDecl!NameResolutionError {
+  let { storage_class, ty, name, value } = decl
+
+  if env.identifiers.contains_local(name) {
+    match env.identifiers.resolve(name) {
+      Some({ new_name: _, has_linkage }) => {
+        if not(has_linkage && decl.storage_class == Some(Extern)) {
+          raise ConflictingLocalDeclarations(name)
+        }
+      }
+      _ => ()
+    }
   }
 
-  self.next_var_id += 1
+  if storage_class == Some(Extern) {
+    env.identifiers.declare_shadowing(name, { new_name: name, has_linkage: true })
+    return decl
+  }
+
+  let new_name = self.next_var_name(name)
+  env.identifiers.declare_shadowing(name, { new_name, has_linkage: false })
 
   match value {
     Some(expr) => {
       let new_expr = self.resolve_expr!(expr, env)
-      { ty, name: new_name, value: Some(new_expr) }
+      { storage_class, ty, name: new_name, value: Some(new_expr) }
     }
-    None => { ty, name: new_name, value: None }
+    None => { storage_class, ty, name: new_name, value: None }
   }
 }
 
-fn resolve_decl(self: NameResolutionPass, decl: @parse.Decl, env: Env) -> @parse.Decl!NameResolutionError {
+enum DeclarationScope {
+  FileScope
+  BlockScope
+} derive(Eq)
+
+fn resolve_decl(self: NameResolutionPass, decl: @parse.Decl, env: Env, ~scope: DeclarationScope) -> @parse.Decl!NameResolutionError {
   match decl {
-    VarDecl({ ty, name, value }) => {
-      VarDecl(self.resolve_variable_decl!({ ty, name, value }, env))
+    VarDecl(decl) => {
+      VarDecl(match scope {
+        BlockScope => self.resolve_local_variable_decl!(decl, env)
+        FileScope => resolve_file_scope_variable_decl(decl, env)
+      })
     }
     FunDecl(decl) => {
       if not(decl.body.is_empty()) && not(env.is_top_level()) {
         raise FunctionDefinitionShouldBeTopLevel(decl.name)
+      }
+
+      if scope == BlockScope && decl.storage_class == Some(Static) {
+        raise BlockScopeFunctionDeclCannotBeStatic(decl.name)
       }
 
       FunDecl(self.resolve_function_decl!(decl, env))
@@ -333,9 +370,9 @@ fn resolve_decl(self: NameResolutionPass, decl: @parse.Decl, env: Env) -> @parse
 }
 
 fn resolved_param(self: NameResolutionPass, param: @parse.FunctionParam, env: Env) -> @parse.FunctionParam!NameResolutionError {
-  let new_name = "param." + param.name + "." + self.next_var_id.to_string()
+  let new_name = self.next_param_name(param.name)
 
-  match env.identifiers.declare?(param.name, { new_name, linkage: None }) {
+  match env.identifiers.declare?(param.name, { new_name, has_linkage: false }) {
     Ok(_) => ()
     Err(MemberAlreadyDeclared) => raise VariableAlreadyDeclared(param.name)
   }
@@ -349,7 +386,7 @@ fn resolve_block(self: NameResolutionPass, block: Array[@parse.BlockItem], env: 
   for item in block {
     match item {
       Decl(decl) => {
-        let new_decl = self.resolve_decl!(decl, env)
+        let new_decl = self.resolve_decl!(decl, env, ~scope=BlockScope)
         new_block.push(@parse.BlockItem::Decl(new_decl))
       }
       Stmt(stmt) => {
@@ -427,19 +464,19 @@ fn collect_function_def_labels(self: NameResolutionPass, func: @parse.FunctionDe
 
 // Collect all the labels declared in this function (a goto can reference a label declared later in the function)
 fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, env: Env) -> @parse.FunctionDecl!NameResolutionError {
-  let { return_type, name, params, body } = func
+  let { storage_class, return_type, name, params, body } = func
 
   env.goto_labels.clear() // Reset the goto labels for this function
   self.collect_function_def_labels!(func, env.goto_labels)
 
   if env.identifiers.contains_local(name) {
     match env.identifiers.resolve(name) {
-      Some({ new_name: _, linkage: None }) => raise DuplicateFunctionDeclaration(name)
+      Some({ new_name: _, has_linkage: false }) => raise DuplicateFunctionDeclaration(name)
       _ => ()
     }
   }
 
-  env.identifiers.declare_shadowing(name, { new_name: name, linkage: Some(External) })
+  env.identifiers.declare_shadowing(name, { new_name: name, has_linkage: true })
 
   let body_env = env.child()
   let new_params = []
@@ -455,17 +492,17 @@ fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, en
     None => None
   }
 
-  { return_type, name, params: new_params, body: new_body }
+  { storage_class, return_type, name, params: new_params, body: new_body }
 }
 
 pub fn resolved(self: NameResolutionPass, program: @parse.Program) -> @parse.Program!NameResolutionError {
-  let functions = []
+  let decls = []
   let env = Env::new()
 
-  for func in program.functions {
-    let new_func = self.resolve_function_decl!(func, env)
-    functions.push(new_func)
+  for decl in program.decls {
+    let new_decl = self.resolve_decl!(decl, env, ~scope=FileScope)
+    decls.push(new_decl)
   }
 
-  { functions, }
+  { decls, }
 }

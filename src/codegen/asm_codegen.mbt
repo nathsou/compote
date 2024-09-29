@@ -194,7 +194,7 @@ fn align_to_16_bytes(size: Int) -> Int {
   }
 }
 
-pub fn asm(self: TacFunctionDef) -> AsmFunctionDef!AsmBuilderError {
+pub fn asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmFunctionDef!AsmBuilderError {
   let builder = AsmBuilder::new()
 
   // placeholder for stack allocation
@@ -221,7 +221,7 @@ pub fn asm(self: TacFunctionDef) -> AsmFunctionDef!AsmBuilderError {
     builder.convert_inst!(inst)
   }
 
-  let pass1 = ReplacePseudoRegsPass::new()
+  let pass1 = ReplacePseudoRegsPass::new(symbols)
   let insts1 = pass1.run(builder.instructions)
 
   let aligned_stack_size = align_to_16_bytes(pass1.stack_offset.abs())
@@ -231,15 +231,28 @@ pub fn asm(self: TacFunctionDef) -> AsmFunctionDef!AsmBuilderError {
 
   let insts2 = FixUpPass::run(insts1)
 
-  { name: self.name, body: insts2, stack_size: pass1.stack_offset }
+  {
+    name: self.name,
+    global: self.global,
+    body: insts2,
+    stack_size: pass1.stack_offset,
+  }
 }
 
-pub fn asm(self: TacProgram) -> AsmProgram!AsmBuilderError {
-  let functions = []
+pub fn asm(self: TacProgram, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmProgram!AsmBuilderError {
+  let functions: Array[AsmFunctionDef] = []
+  let static_vars: Array[AsmStaticVarDef] = []
 
-  for f in self.functions {
-    functions.push(f.asm!())
+  for item in self.top_level {
+    match item {
+      Function(function) => {
+        functions.push(function.asm!(symbols))
+      }
+      StaticVar(~name, ~global, ~init) => {
+        static_vars.push({ name, global, init })
+      } 
+    }
   }
 
-  { functions, }
+  { functions, static_vars }
 }

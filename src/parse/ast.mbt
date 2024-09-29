@@ -8,6 +8,10 @@ pub enum Constant {
   IntConst(Int)
 } derive (Eq, Hash)
 
+pub enum StorageClass {
+  Static; Extern
+} derive(Eq)
+
 pub enum Expr {
   Constant(Constant)
   Variable(String)
@@ -51,6 +55,7 @@ pub struct VariableDecl {
   ty: Type
   name: String
   value: Expr?
+  storage_class: StorageClass?
 }
 
 pub struct FunctionParam {
@@ -63,6 +68,7 @@ pub struct FunctionDecl {
   name: String
   params: Array[FunctionParam]
   body: Array[BlockItem]?
+  storage_class: StorageClass?
 }
 
 pub enum Decl {
@@ -71,7 +77,7 @@ pub enum Decl {
 }
 
 pub struct Program {
-  functions: Array[FunctionDecl]
+  decls: Array[Decl]
 }
 
 pub enum UnaryOp {

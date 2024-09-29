@@ -318,6 +318,8 @@ fn next(self: Lexer) -> LexerResult {
           "switch" => Switch
           "case" => Case
           "default" => Default
+          "static" => Static
+          "extern" => Extern
           _ => Identifier(identifier)
         })
       } else {

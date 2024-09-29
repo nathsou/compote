@@ -4,17 +4,17 @@ pub type FixUpPass Unit
 fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
   match inst {
      // some instructions with stack addresses as both operands are invalid
-    Mov(~src=Stack(src), ~dst=Stack(dst)) => [
-      Mov(~src=Stack(src), ~dst=Reg(R10)),
-      Mov(~src=Reg(R10), ~dst=Stack(dst)),
+    Mov(~src=Stack(_) | Data(_) as src, ~dst=Stack(_) | Data(_) as dst) => [
+      Mov(~src, ~dst=Reg(R10)),
+      Mov(~src=Reg(R10), ~dst),
     ]
-    Binary(~op=Add | Sub | And | Or | Xor as op, ~src=Stack(src), ~dst=Stack(dst)) => [
-      Mov(~src=Stack(src), ~dst=Reg(R10)),
-      Binary(~op, ~src=Reg(R10), ~dst=Stack(dst)),
+    Binary(~op=Add | Sub | And | Or | Xor as op, ~src=Stack(_) | Data(_) as src, ~dst=Stack(_) | Data(_) as dst) => [
+      Mov(~src, ~dst=Reg(R10)),
+      Binary(~op, ~src=Reg(R10), ~dst),
     ]
-    Cmp(~src=Stack(src), ~dst=Stack(dst)) => [
-      Mov(~src=Stack(src), ~dst=Reg(R10)),
-      Cmp(~src=Reg(R10), ~dst=Stack(dst)),
+    Cmp(~src=Stack(_) | Data(_) as src, ~dst=Stack(_) | Data(_) as dst) => [
+      Mov(~src, ~dst=Reg(R10)),
+      Cmp(~src=Reg(R10), ~dst),
     ]
     // if the shift amount is an immediate, it can be used directly
     Binary(~op=Shl | Sal, ~src=Imm(_), ~dst=_) => [inst]
@@ -24,10 +24,10 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
       Binary(~op, ~src=RegSize(CX, Byte), ~dst),
     ]
     // imul can't use a memory address as destination
-    Binary(~op=Mul, ~src, ~dst=Stack(dst)) => [
-      Mov(~src=Stack(dst), ~dst=Reg(R11)),
+    Binary(~op=Mul, ~src, ~dst=Stack(_) | Data(_) as dst) => [
+      Mov(~src=dst, ~dst=Reg(R11)),
       Binary(~op=Mul, ~src, ~dst=Reg(R11)),
-      Mov(~src=Reg(R11), ~dst=Stack(dst)),
+      Mov(~src=Reg(R11), ~dst),
     ]
     // idiv, cmp instructions do not support immediate operands
     IDiv(~src=Imm(n)) => [

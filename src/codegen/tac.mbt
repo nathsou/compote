@@ -18,28 +18,41 @@ pub enum TacInst {
 
 pub struct TacFunctionDef {
   name: String
+  global: Bool
   params: Array[String]
   body: Array[TacInst]
 } derive(Show)
 
+pub enum TacTopLevel {
+  Function(TacFunctionDef)
+  StaticVar(~name: String, ~global: Bool, ~init: Int)
+} derive(Show)
+
 pub struct TacProgram {
-  functions: Array[TacFunctionDef]
+  top_level: Array[TacTopLevel]
 }
 
 pub impl Show for TacProgram with output(self, logger: Logger) {
-  for function in self.functions {
-    logger.write_string("function ")
-    logger.write_string(function.name)
-    logger.write_string("(")
-    logger.write_string(function.params.join(", "))
-    logger.write_string(") {\n")
-    
-    for inst in function.body {
-      logger.write_string("  ")
-      logger.write_string(Show::to_string(inst))
-      logger.write_string("\n")
+  for top_level in self.top_level {
+    match top_level {
+      Function(function) => {
+        logger.write_string("function ")
+        logger.write_string(function.name)
+        logger.write_string("(")
+        logger.write_string(function.params.join(", "))
+        logger.write_string(") {\n")
+        
+        for inst in function.body {
+          logger.write_string("  ")
+          logger.write_string(Show::to_string(inst))
+          logger.write_string("\n")
+        }
+        
+        logger.write_string("}\n")
+      }
+      StaticVar(~name, ~global=_, ~init) => {
+        logger.write_string("static \{name} = \{init}\n")
+      }
     }
-    
-    logger.write_string("}\n")
   }
 }

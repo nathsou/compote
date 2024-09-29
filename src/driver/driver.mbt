@@ -55,7 +55,7 @@ fn validate_stage(source: String) -> (@parse.Program, Map[String, @validate.Symb
 fn tac_gen_stage(source: String) -> (@codegen.TacProgram, Map[String, @validate.SymbolTableEntry])!CompilerError {
   let (program, symbols) = validate_stage!(source)
 
-  match @codegen.convert_prog?(program) {
+  match @codegen.convert_prog?(program, symbols) {
     Ok(tac) => (tac, symbols)
     Err(error) => raise TacBuilder(error)
   }
@@ -64,7 +64,7 @@ fn tac_gen_stage(source: String) -> (@codegen.TacProgram, Map[String, @validate.
 fn codegen_stage(source: String) -> (@codegen.AsmProgram, Map[String, @validate.SymbolTableEntry])!CompilerError {
   let (program, symbols) = tac_gen_stage!(source)
   
-  match program.asm?() {
+  match program.asm?(symbols) {
     Ok(asm) => (asm, symbols)
     Err(error) => raise AsmBuilder(error)
   }

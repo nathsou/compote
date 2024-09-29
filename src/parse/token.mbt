@@ -14,6 +14,7 @@ pub enum Token {
   Int; Return; Void; If; Else; Goto
   Do; While; For; Break; Continue
   Switch; Case; Default
+  Static; Extern
   // literals
   IntLiteral(Int)
   // identifiers
@@ -53,6 +54,13 @@ pub fn to_binop(self: Token) -> Option[BinaryOp] {
     RshiftEqual => Some(Assignment(AssignShr))
     QuestionMark => Some(Ternary)
     _ => None
+  }
+}
+
+pub fn is_specifier(self: Token) -> Bool {
+  match self {
+    Int | Extern | Static => true
+    _ => false
   }
 }
 
@@ -113,6 +121,8 @@ pub impl Show for Token with output(self, logger: Logger) {
     Switch => "switch"
     Case => "case"
     Default => "default"
+    Static => "static"
+    Extern => "extern"
     IntLiteral(n) => n.to_string()
     Identifier(s) => s
   })
