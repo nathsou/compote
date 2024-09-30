@@ -60,7 +60,7 @@ fn emit(self: Emitter, line: String) -> Unit {
   self.lines.push(repeat_string("  ", self.indentation) + line)
 }
 
-fn asm(self: AsmOperand, size: RegSize) -> String!EmitterError {
+fn asm(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String!EmitterError {
   match self {
     Imm(n) => "$\{n}"
     Reg(reg) => match reg {
@@ -110,10 +110,10 @@ fn asm(self: AsmOperand, size: RegSize) -> String!EmitterError {
         Quad => "%r11"
       }
     }
-    RegSize(reg, size) => Reg(reg).asm!(size)
+    RegSize(reg, size) => Reg(reg).asm!(size, os)
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
-    Data(name) => "\{name}(%rip)"
+    Data(name) => os.symbol(name) + "(%rip)"
   }
 }
 
@@ -151,22 +151,22 @@ fn suffix(self: CondCode) -> String {
 fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
   match inst {
     Mov(~src, ~dst) => {
-      self.emit("movl \{src.asm!(Long)}, \{dst.asm!(Long)}")
+      self.emit("movl \{src.asm!(Long, self.os)}, \{dst.asm!(Long, self.os)}")
     }
     Unary(~op, ~dst) => {
-      self.emit("\{op.asm()} \{dst.asm!(Long)}")
+      self.emit("\{op.asm()} \{dst.asm!(Long, self.os)}")
     }
     Binary(~op=Shl | Sal as op, ~src, ~dst) => {
-      self.emit("\{op.asm()} \{src.asm!(Long)}, \{dst.asm!(Byte)}")
+      self.emit("\{op.asm()} \{src.asm!(Long, self.os)}, \{dst.asm!(Byte, self.os)}")
     }
     Binary(~op, ~src, ~dst) => {
-      self.emit("\{op.asm()} \{src.asm!(Long)}, \{dst.asm!(Long)}")
+      self.emit("\{op.asm()} \{src.asm!(Long, self.os)}, \{dst.asm!(Long, self.os)}")
     }
     Cmp(~src, ~dst) => {
-      self.emit("cmpl \{src.asm!(Long)}, \{dst.asm!(Long)}")
+      self.emit("cmpl \{src.asm!(Long, self.os)}, \{dst.asm!(Long, self.os)}")
     }
     IDiv(~src) => {
-      self.emit("idivl \{src.asm!(Long)}")
+      self.emit("idivl \{src.asm!(Long, self.os)}")
     }
     Cdq => {
       self.emit("cdq")
@@ -178,7 +178,7 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
       self.emit("j\{cond.suffix()} \{self.os.label(target)}")
     }
     SetCond(~cond, ~dst) => {
-      self.emit("set\{cond.suffix()} \{dst.asm!(Byte)}")
+      self.emit("set\{cond.suffix()} \{dst.asm!(Byte, self.os)}")
     }
     Label(name) => {
       self.emit(self.os.label(name) + ":")
@@ -190,7 +190,7 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
       self.emit("addq $\{size.abs()}, %rsp")
     }
     Push(operand) => {
-      self.emit("pushq \{operand.asm!(Quad)}")
+      self.emit("pushq \{operand.asm!(Quad, self.os)}")
     }
     Call(label) => {
       let suffix = match self.os {
