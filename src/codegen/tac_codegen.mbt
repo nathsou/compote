@@ -73,9 +73,9 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
 
 fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError {
   match expr {
-    Constant(IntConst(n)) => Constant(n)
-    Variable(name) => Variable(name)
-    Unary(~op, ~expr) => {
+    Constant(~const=IntConst(n), ~ty=_) => Constant(n)
+    Variable(~name, ~ty=_) => Variable(name)
+    Unary(~op, ~expr, ~ty=_) => {
       let src = self.convert_expr!(expr)
 
       match op {
@@ -104,7 +104,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
         }
       }
     }
-    Binary(~op=LogicalAnd, ~lhs, ~rhs) => {
+    Binary(~op=LogicalAnd, ~lhs, ~rhs, ~ty=_) => {
       let result_name = next_temp_var()
       let result = TacValue::Variable(result_name)
       let false_label = next_label("and_false")
@@ -120,7 +120,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Label(end_label))
       result
     }
-    Binary(~op=LogicalOr, ~lhs, ~rhs) => {
+    Binary(~op=LogicalOr, ~lhs, ~rhs, ~ty=_) => {
       let result_name = next_temp_var()
       let result = TacValue::Variable(result_name)
       let true_label = next_label("or_true")
@@ -136,7 +136,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Label(end_label))
       result
     }
-    Binary(~op, ~lhs, ~rhs) => {
+    Binary(~op, ~lhs, ~rhs, ~ty=_) => {
       let v1 = self.convert_expr!(lhs)
       let v2 = self.convert_expr!(rhs)
       let dst_name = next_temp_var()
@@ -144,7 +144,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Binary(~op, ~lhs=v1, ~rhs=v2, ~dst))
       dst
     }
-    Assignment(~op, ~lhs=Variable(name), ~rhs) => {
+    Assignment(~op, ~lhs=Variable(~name, ~ty=_) as lhs, ~rhs, ~ty) => {
       let compound_op: Option[@parse.BinaryOp] = match op {
         AssignAdd => Some(Add)
         AssignSub => Some(Sub)
@@ -160,7 +160,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       }
 
       let src = self.convert_expr!(match compound_op {
-        Some(op) => Binary(~op, ~lhs=Variable(name), ~rhs)
+        Some(op) => Binary(~op, ~lhs, ~rhs, ~ty)
         None => rhs
       })
 
@@ -168,8 +168,8 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Copy(~src, ~dst))
       dst
     }
-    Assignment(~op=_, ~lhs, ~rhs=_) => raise InvalidAssignmentTarget(lhs)
-    Conditional(~cond, ~then, ~otherwise) => {
+    Assignment(~op=_, ~lhs, ~rhs=_, ~ty=_) => raise InvalidAssignmentTarget(lhs)
+    Conditional(~cond, ~then, ~otherwise, ~ty=_) => {
       let cond = self.convert_expr!(cond)
       let else_label = next_label("ternary_else")
       let end_label = next_label("ternary_end")
@@ -184,7 +184,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Label(end_label))
       result
     }
-    Call(~name, ~args) => {
+    Call(~name, ~args, ~ty=_) => {
       let arg_values = []
 
       for arg in args {
@@ -436,7 +436,7 @@ fn convert_function_def(func: @parse.FunctionDecl, symbols: Map[String, @validat
 
       // for now always add a "return 0;" at the end of the function
       // this handles the case where the function does not return a value
-      builder.convert_stmt!(Return(Constant(IntConst(0))))
+      builder.convert_stmt!(Return(Constant(~const=IntConst(0), ~ty=Some(Int))))
 
       let global = match symbols.get(func.name) {
         Some(Function(~ty=_, ~attributes=FunAttr(~global, ~defined=_))) => global
@@ -478,7 +478,7 @@ pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolT
         match attributes {
           StaticAttr(~init, ~global) => {
             match init {
-              Initial(n) => top_level.push(StaticVar(~name, ~global, ~init=n))
+              Initial(IntInit(n)) => top_level.push(StaticVar(~name, ~global, ~init=n))
               Tentative => top_level.push(StaticVar(~name, ~global, ~init=0))
               NoInitializer => ()
             }

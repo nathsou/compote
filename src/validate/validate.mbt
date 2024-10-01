@@ -10,8 +10,8 @@ pub fn validated(prog: @parse.Program) -> (@parse.Program, Map[String, SymbolTab
   match pass.resolved?(prog) {
     Ok(resolved) => {
       let checker = TypeChecker::new()
-      match checker.check_program?(resolved) {
-        Ok(_) => (resolved, checker.symbols)
+      match checker.typed_program?(resolved) {
+        Ok(typed) => (typed, checker.symbols)
         Err(error) => raise TypeChecker(error)
       }
     }

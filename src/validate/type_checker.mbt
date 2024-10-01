@@ -1,6 +1,23 @@
 
 pub enum InitialValue {
-  Tentative; Initial(Int); NoInitializer
+  Tentative; Initial(StaticInit); NoInitializer
+}
+fn convert_to(const: @parse.Constant, ty: @parse.Type) -> StaticInit!TypeCheckerError {
+  match ty {
+    Int => match const {
+      IntConst(n) => IntInit(n)
+      LongConst(n) => IntInit(n.to_int())
+    }
+    Long => match const {
+      IntConst(n) => LongInit(n.to_int64())
+      LongConst(n) => LongInit(n)
+    }
+    _ => raise TypeCheckerError::Unreachable("non-integer static variable initializer")
+  }
+}
+
+pub enum StaticInit {
+  IntInit(Int); LongInit(Int64)
 }
 
 pub enum IdentifierAttributes {
@@ -14,8 +31,14 @@ pub enum SymbolTableEntry {
   Function(~ty: @parse.Type, ~attributes: IdentifierAttributes)
 }
 
+pub struct FunctionStackEntry {
+  name: String
+  return_ty: @parse.Type
+}
+
 pub struct TypeChecker {
   symbols: Map[String, SymbolTableEntry]
+  function_stack: Array[FunctionStackEntry]
 }
 
 pub type! TypeCheckerError {
@@ -27,7 +50,7 @@ pub type! TypeCheckerError {
   UndefinedSymbol(String)
   StaticFunctionDeclFollowsNonStatic(String)
   FileScopeVarNonConstantInitializer(~variable: String, ~init: @parse.Expr)
-  FunctionRedeclaredAsVariable(String)
+  VariableRedeclaredWithDifferentType(String)
   ConflictingVariableLinkage(String)
   ConflictingGlobalVariableDefinition(String)
   InitializerOnLocalExternVarDecl(String)
@@ -37,12 +60,12 @@ pub type! TypeCheckerError {
 } derive(Show)
 
 pub fn TypeChecker::new() -> TypeChecker {
-  { symbols: {} }
+  { symbols: {}, function_stack: [] }
 }
 
-fn check_file_scope_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> Unit!TypeCheckerError {
+fn typed_file_scope_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> @parse.VariableDecl!TypeCheckerError {
   let mut initial_value = match decl.value {
-    Some(Constant(IntConst(n))) => Initial(n)
+    Some(Constant(~const, ~ty=_)) => Initial(convert_to!(const, decl.ty))
     None => match decl.storage_class {
       Some(Extern) => NoInitializer
       _ => Tentative
@@ -54,8 +77,8 @@ fn check_file_scope_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) 
 
   match self.symbols.get(decl.name) {
     Some(Variable(~ty, ~attributes) | Function(~ty, ~attributes)) => {
-      if ty != Int {
-        raise FunctionRedeclaredAsVariable(decl.name)
+      if decl.ty != ty {
+        raise VariableRedeclaredWithDifferentType(decl.name)
       }
 
       match attributes {
@@ -83,10 +106,12 @@ fn check_file_scope_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) 
     None => ()
   }
 
-  self.symbols[decl.name] = Variable(~ty=Int, ~attributes=StaticAttr(~init=initial_value, ~global=is_global))
+  self.symbols[decl.name] = Variable(~ty=decl.ty, ~attributes=StaticAttr(~init=initial_value, ~global=is_global))
+
+  decl
 }
 
-fn check_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> Unit!TypeCheckerError {
+fn typed_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> @parse.VariableDecl!TypeCheckerError {
   match decl.storage_class {
     Some(Extern) => {
       if not(decl.value.is_empty()) {
@@ -95,44 +120,54 @@ fn check_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> Un
 
       match self.symbols.get(decl.name) {
         Some(Variable(~ty, ~attributes=_) | Function(~ty, ~attributes=_)) => {
-          if ty != Int {
-            raise FunctionRedeclaredAsVariable(decl.name)
+          if ty != decl.ty {
+            raise VariableRedeclaredWithDifferentType(decl.name)
           }
         }
         None => {
-          self.symbols[decl.name] = Variable(~ty=Int, ~attributes=StaticAttr(~init=NoInitializer, ~global=true))
+          self.symbols[decl.name] = Variable(~ty=decl.ty, ~attributes=StaticAttr(~init=NoInitializer, ~global=true))
         }
       }
+
+      decl
     }
     Some(Static) => {
       let initial_value = match decl.value {
-        Some(Constant(IntConst(n))) => Initial(n)
-        None => Initial(0)
+        Some(Constant(~const, ~ty=_)) => Initial(convert_to!(const, decl.ty))
+        None => Initial(match decl.ty {
+          Int => IntInit(0)
+          Long => LongInit(0)
+          _ => raise TypeCheckerError::Unreachable("non-integer static variable initializer")
+        })
         Some(init) => raise NonConstantInitializerOnLocalStaticVar(~variable=decl.name, ~init)
       }
 
-      self.symbols[decl.name] = Variable(~ty=Int, ~attributes=StaticAttr(~init=initial_value, ~global=false))
+      self.symbols[decl.name] = Variable(~ty=decl.ty, ~attributes=StaticAttr(~init=initial_value, ~global=false))
+
+      decl
     }
     None => {
-      self.symbols[decl.name] = Variable(~ty=Int, ~attributes=LocalAttr)
+      self.symbols[decl.name] = Variable(~ty=decl.ty, ~attributes=LocalAttr)
 
-      match decl.value {
-        Some(value) => self.check_expr!(value)
-        None => ()
+      let value = match decl.value {
+        Some(value) => Some(self.typed_expr!(value))
+        None => None
       }
+
+      { ty: decl.ty, name: decl.name, value, storage_class: decl.storage_class }
     }
   }
 }
 
-fn check_variable_declaration(self: TypeChecker, decl: @parse.VariableDecl, ~scope: DeclarationScope) -> Unit!TypeCheckerError {
+fn typed_variable_declaration(self: TypeChecker, decl: @parse.VariableDecl, ~scope: DeclarationScope) -> @parse.VariableDecl!TypeCheckerError {
   match scope {
-    FileScope => self.check_file_scope_variable_decl!(decl)
-    BlockScope => self.check_local_variable_decl!(decl)
+    FileScope => self.typed_file_scope_variable_decl!(decl)
+    BlockScope => self.typed_local_variable_decl!(decl)
   }
 }
 
-fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) -> Unit!TypeCheckerError {
-  let fun_type = @parse.FunType(~param_count=decl.params.length())
+fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) -> @parse.FunctionDecl!TypeCheckerError {
+  let fun_type = decl.to_type()
   let has_body = not(decl.body.is_empty())
   let mut already_defined = false
   let mut is_global = decl.storage_class != Some(Static)
@@ -170,68 +205,143 @@ fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) -> U
 
   match decl.body {
     Some(body) => {
+      self.function_stack.push({ name: decl.name, return_ty: decl.return_ty })
+
       for param in decl.params {
         self.symbols[param.name] = Variable(~ty=param.ty, ~attributes=LocalAttr)
       }
 
-      self.check_block!(body)
+      let body = self.typed_block!(body)
+
+      let _ = self.function_stack.pop()
+
+      {
+        return_ty: decl.return_ty,
+        name: decl.name,
+        params: decl.params,
+        body: Some(body),
+        storage_class: decl.storage_class,
+      }
     }
-    None => ()
+    None => decl
   }
 }
 
-pub fn check_decl(self: TypeChecker, decl: @parse.Decl, ~scope: DeclarationScope) -> Unit!TypeCheckerError {
+pub fn typed_decl(self: TypeChecker, decl: @parse.Decl, ~scope: DeclarationScope) -> @parse.Decl!TypeCheckerError {
   match decl {
-    VarDecl(decl) => self.check_variable_declaration!(decl, ~scope)
-    FunDecl(decl) => self.check_function_declaration!(decl)
+    VarDecl(decl) => VarDecl(self.typed_variable_declaration!(decl, ~scope))
+    FunDecl(decl) => FunDecl(self.check_function_declaration!(decl))
   }
 }
 
-pub fn check_block(self: TypeChecker, block: Array[@parse.BlockItem]) -> Unit!TypeCheckerError {
+pub fn typed_block(self: TypeChecker, block: Array[@parse.BlockItem]) -> Array[@parse.BlockItem]!TypeCheckerError {
+  let typed_block = []
+
   for item in block {
-    match item {
-      Stmt(stmt) => self.check_stmt!(stmt)
-      Decl(decl) => self.check_decl!(decl, ~scope=BlockScope)
+    let typed_item: @parse.BlockItem = match item {
+      Stmt(stmt) => Stmt(self.typed_stmt!(stmt))
+      Decl(decl) => Decl(self.typed_decl!(decl, ~scope=BlockScope))
     }
+
+    typed_block.push(typed_item)
+  }
+
+  typed_block
+}
+
+fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type!TypeCheckerError {
+  if ty1 == ty2 {
+    return ty1
+  }
+
+  match (ty1, ty2) {
+    (Int, Long) | (Long, Int) => Long
+    _ => raise TypeCheckerError::Unreachable("no common type")
   }
 }
 
-pub fn check_expr(self: TypeChecker, expr: @parse.Expr) -> Unit!TypeCheckerError {
+fn cast(expr: @parse.Expr, ty: @parse.Type) -> @parse.Expr {
+  if expr.ty() == ty {
+    expr
+  } else {
+    @parse.Cast(~target_ty=ty, ~expr=expr, ~ty=Some(ty))
+  }
+}
+
+pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheckerError {
   match expr {
-    Constant(_) => ()
-    Variable(name) => {
+    Constant(~const, ~ty=_) => match const {
+      IntConst(_) => Constant(~const, ~ty=Some(Int))
+      LongConst(_) => Constant(~const, ~ty=Some(Long))
+    }
+    Variable(~name, ~ty=_) => {
       match self.symbols.get(name) {
-        Some(Variable(_)) => ()
+        Some(Variable(~ty=var_ty, attributes=_)) => Variable(~name=name, ~ty=Some(var_ty))
         Some(Function(_)) => raise FunctionNameUsedAsVariable(name)
         None => raise UndefinedSymbol(name)
       }
     }
-    Unary(~op=_, ~expr) => {
-      check_expr!(self, expr)
+    Cast(~target_ty, ~expr, ~ty=_) => {
+      let expr = self.typed_expr!(expr)
+      Cast(~target_ty, ~expr, ~ty=Some(target_ty))
     }
-    Binary(~op=_, ~lhs, ~rhs) => {
-      check_expr!(self, lhs)
-      check_expr!(self, rhs)
+    Unary(~op, ~expr, ~ty=_) => {
+      let expr = self.typed_expr!(expr)
+
+      let ty: @parse.Type = match op {
+        Not => Int
+        _ => expr.ty()
+      }
+
+      Unary(~op, ~expr, ~ty=Some(ty))
     }
-    Assignment(~op=_, ~lhs, ~rhs) => {
-      check_expr!(self, lhs)
-      check_expr!(self, rhs)
+    Binary(~op, ~lhs, ~rhs, ~ty=_) => {
+      let lhs = self.typed_expr!(lhs)
+      let rhs = self.typed_expr!(rhs)
+      match op {
+        LogicalAnd | LogicalOr => Binary(~op, ~lhs, ~rhs, ~ty=Some(Int))
+        _ => {
+          let common_ty = get_common_type!(lhs.ty(), rhs.ty())
+          let lhs = cast(lhs, common_ty)
+          let rhs = cast(rhs, common_ty)
+          Binary(~op, ~lhs, ~rhs, ~ty=Some(common_ty))
+        }
+      }
     }
-    Conditional(~cond, ~then, ~otherwise) => {
-      check_expr!(self, cond)
-      check_expr!(self, then)
-      check_expr!(self, otherwise)
+    Assignment(~op, ~lhs, ~rhs, ~ty=_) => {
+      let lhs = self.typed_expr!(lhs)
+      let rhs = self.typed_expr!(rhs)
+      let lhs_ty = lhs.ty()
+      let rhs = cast(rhs, lhs_ty)
+      Assignment(~op, ~lhs, ~rhs, ~ty=Some(lhs_ty))
     }
-    Call(~name, ~args) => {
+    Conditional(~cond, ~then, ~otherwise, ~ty=_) => {
+      let cond = self.typed_expr!(cond)
+      let then = self.typed_expr!(then)
+      let otherwise = self.typed_expr!(otherwise)
+      let common_ty = get_common_type!(then.ty(), otherwise.ty())
+      let then = cast(then, common_ty)
+      let otherwise = cast(otherwise, common_ty)
+      Conditional(~cond, ~then, ~otherwise, ~ty=Some(common_ty))
+    }
+    Call(~name, ~args, ~ty=_) => {
       match self.symbols.get(name) {
-      Some(Function(~ty=@parse.FunType(~param_count), attributes=_)) => {
-          if args.length() != param_count {
-            raise IncorrectArgumentCount(~name=name, ~expected=param_count, ~actual=args.length())
+        Some(Function(~ty=@parse.FunType(~params, ~ret), attributes=_)) => {
+          if args.length() != params.length() {
+            raise IncorrectArgumentCount(~name=name, ~expected=params.length(), ~actual=args.length())
+          }
+          
+          let converted_args = []
+
+          for i in 0..<args.length() {
+            let arg = self.typed_expr!(args[i])
+            let param_ty = params[i]
+            let arg_ty = arg.ty()
+            let common_ty = get_common_type!(param_ty, arg_ty)
+            converted_args.push(cast(arg, common_ty))
           }
 
-          for arg in args {
-            self.check_expr!(arg)
-          }
+          Call(~name=name, ~args=converted_args, ~ty=Some(ret))
         }
         Some(Function(_)) => raise TypeCheckerError::Unreachable("Function with incorrect type")
         Some(Variable(_)) => raise VariableUsedAsFunctionName(name)
@@ -241,79 +351,96 @@ pub fn check_expr(self: TypeChecker, expr: @parse.Expr) -> Unit!TypeCheckerError
   }
 }
 
-pub fn check_stmt(self: TypeChecker, stmt: @parse.Stmt) -> Unit!TypeCheckerError {
+pub fn typed_stmt(self: TypeChecker, stmt: @parse.Stmt) -> @parse.Stmt!TypeCheckerError {
   match stmt {
     Return(expr) => {
-      self.check_expr!(expr)
-    }
-    Expression(expr) => {
-      self.check_expr!(expr)
-    }
-    If(~cond, ~then, ~otherwise) => {
-      self.check_expr!(cond)
-      self.check_stmt!(then)
-
-      match otherwise {
-        Some(stmt) => self.check_stmt!(stmt)
-        None => ()
+      match self.function_stack.last() {
+        Some({ name: _, return_ty }) => {
+          let expr = self.typed_expr!(expr)
+          let expr_ty = expr.ty()
+          let common_ty = get_common_type!(return_ty, expr_ty)
+          Return(cast(expr, common_ty))
+        }
+        None => raise TypeCheckerError::Unreachable("return statement outside of function")
       }
+    }
+    Expression(expr) => Expression(self.typed_expr!(expr))
+    If(~cond, ~then, ~otherwise) => {
+      let cond = self.typed_expr!(cond)
+      let then = self.typed_stmt!(then)
+
+      let otherwise = match otherwise {
+        Some(stmt) => Some(self.typed_stmt!(stmt))
+        None => None
+      }
+
+      If(~cond, ~then, ~otherwise)
     }
     Labeled(~label=_, ~stmt) => {
-      self.check_stmt!(stmt)
+      self.typed_stmt!(stmt)
     }
     Compound(block) => {
-      self.check_block!(block)
+      Compound(self.typed_block!(block))
     }
-    DoWhile(~body, ~cond, ~label=_) => {
-      self.check_stmt!(body)
-      self.check_expr!(cond)
+    DoWhile(~body, ~cond, ~label) => {
+      let body = self.typed_stmt!(body)
+      let cond = self.typed_expr!(cond)
+      DoWhile(~body, ~cond, ~label)
     }
-    While(~cond, ~body, ~label=_) => {
-      self.check_expr!(cond)
-      self.check_stmt!(body)
+    While(~cond, ~body, ~label) => {
+      let cond = self.typed_expr!(cond)
+      let body = self.typed_stmt!(body)
+      While(~cond, ~body, ~label)
     }
-    For(~init, ~cond, ~post, ~body, ~label=_) => {
-      match init {
+    For(~init, ~cond, ~post, ~body, ~label) => {
+      let init: @parse.ForInit = match init {
         InitDecl(decl) => match decl.storage_class {
           Some(_) => raise StorageClassNotPermittedInForLoopInitializer
-          None => self.check_variable_declaration!(decl, ~scope=BlockScope)
+          None => InitDecl(self.typed_variable_declaration!(decl, ~scope=BlockScope))
         }
-        InitExpr(expr) => self.check_expr!(expr)
-        _ => ()
+        InitExpr(expr) => InitExpr(self.typed_expr!(expr))
+        InitEmpty => InitEmpty
       }
 
-      match cond {
-        Some(expr) => self.check_expr!(expr)
-        None => ()
+      let cond = match cond {
+        Some(expr) => Some(self.typed_expr!(expr))
+        None => None
       }
 
-      match post {
-        Some(expr) => self.check_expr!(expr)
-        None => ()
+      let post = match post {
+        Some(expr) => Some(self.typed_expr!(expr))
+        None => None
       }
 
-      self.check_stmt!(body)
+      let body = self.typed_stmt!(body)
+      
+      For(~init, ~cond, ~post, ~body, ~label)
     }
-    Break(~label=_) => ()
-    Continue(~label=_) => ()
-    Goto(_) => ()
-    Switch(~expr, ~body, ~label=_, ~cases_count=_) => {
-      self.check_expr!(expr)
-      self.check_stmt!(body)
+    Break(~label) => Break(~label)
+    Continue(~label) => Continue(~label) 
+    Goto(label) => Goto(label)
+    Switch(~expr, ~body, ~label, ~cases_count) => {
+      let expr = self.typed_expr!(expr)
+      let body = self.typed_stmt!(body)
+      Switch(~expr, ~body, ~label, ~cases_count)
     }
     Case(~expr, ~body) => {
-      self.check_expr!(expr)
-      self.check_stmt!(body)
+      let expr = self.typed_expr!(expr)
+      let body = self.typed_stmt!(body)
+      Case(~expr, ~body)
     }
-    Default(~body) => {
-      self.check_stmt!(body)
-    }
-    Null => ()
+    Default(~body) => Default(~body=self.typed_stmt!(body))
+    Null => Null
   }
 }
 
-pub fn check_program(self: TypeChecker, program: @parse.Program) -> Unit!TypeCheckerError {
+pub fn typed_program(self: TypeChecker, program: @parse.Program) -> @parse.Program!TypeCheckerError {
+  let typed_decls = []
+
   for decl in program.decls {
-    self.check_decl!(decl, ~scope=FileScope)
+    let typed = self.typed_decl!(decl, ~scope=FileScope)
+    typed_decls.push(typed)
   }
+
+  { decls: typed_decls }
 }
