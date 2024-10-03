@@ -19,11 +19,6 @@ pub type! NameResolutionError {
   UndeclaredLabel(String)
   BreakOutsideLoopOrSwitch
   ContinueOutsideLoop
-  CaseOutsideSwitch
-  DefaultOutsideSwitch
-  CaseExprMustBeConstant
-  DuplicateCase(@parse.Constant)
-  MultipleDefaultInSwitch
   UndeclaredFunction(String)
   DuplicateFunctionDeclaration(String)
   FunctionDefinitionShouldBeTopLevel(String)
@@ -102,14 +97,17 @@ fn next_switch_entry(self: NameResolutionPass, prefix: String) -> String {
 
 fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse.Expr!NameResolutionError {
   match expr {
-    Variable(name) => {
+    Variable(~name, ~ty) => {
       match env.identifiers.resolve(name) {
-        Some({ new_name, has_linkage: _ }) => @parse.Variable(new_name)
+        Some({ new_name, has_linkage: _ }) => @parse.Variable(~name=new_name, ~ty=ty)
         None => raise UndeclaredVariable(name)
       }
     }
-    Constant(n) => @parse.Constant(n)
-    Unary(~op, ~expr) => {
+    Cast(~target_ty, ~expr, ~ty) => {
+      @parse.Cast(~target_ty, ~expr=self.resolve_expr!(expr, env), ~ty)
+    }
+    Constant(~const, ~ty) => @parse.Constant(~const, ~ty)
+    Unary(~op, ~expr, ~ty) => {
       match op {
         Inc(_) | Dec(_) => {
           if not(is_lvalue(expr)) {
@@ -119,24 +117,25 @@ fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse
         _ => ()
       }
 
-      @parse.Unary(~op, ~expr=self.resolve_expr!(expr, env))
+      @parse.Unary(~op, ~expr=self.resolve_expr!(expr, env), ~ty)
     }
-    Binary(~op, ~lhs, ~rhs) => @parse.Binary(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env))
-    Assignment(~op, ~lhs, ~rhs) => {
+    Binary(~op, ~lhs, ~rhs, ~ty) => @parse.Binary(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env), ~ty)
+    Assignment(~op, ~lhs, ~rhs, ~ty) => {
       if not(is_lvalue(lhs)) {
         raise InvalidLvalue(Show::to_string(lhs))
       }
 
-      @parse.Expr::Assignment(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env))
+      @parse.Expr::Assignment(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env), ~ty)
     }
-    Conditional(~cond, ~then, ~otherwise) => {
+    Conditional(~cond, ~then, ~otherwise, ~ty) => {
       @parse.Conditional(
         ~cond=self.resolve_expr!(cond, env),
         ~then=self.resolve_expr!(then, env),
         ~otherwise=self.resolve_expr!(otherwise, env),
+        ~ty,
       )
     }
-    Call(~name, ~args) => {
+    Call(~name, ~args, ~ty) => {
       match env.identifiers.resolve(name) {
         Some({ new_name, has_linkage: _ }) => {
           let new_args = []
@@ -145,7 +144,7 @@ fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse
             new_args.push(self.resolve_expr!(arg, env))
           }
 
-          @parse.Call(~name=new_name, ~args=new_args)
+          @parse.Call(~name=new_name, ~args=new_args, ~ty)
         }
         None => raise UndeclaredFunction(name)
       }
@@ -188,7 +187,7 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
         Some(_) => raise NameResolutionError::Unreachable("break with label before resolution")
         None => {
           match env.stack.peek() {
-            Some(Loop(label) | Switch({ label, cases: _, has_default: _ })) => Break(~label=Some(label))
+            Some(Loop(label) | Switch(label)) => Break(~label=Some(label))
             None => raise BreakOutsideLoopOrSwitch
           }
         }
@@ -252,55 +251,22 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
 
       For(~init=new_init, ~cond=new_cond, ~post=new_post, ~body, ~label=Some(loop_label))
     }
-    Switch(~expr, ~body, ~label=_, ~cases_count=_) => {
+    Switch(~expr, ~body, ~label=_, ~cases_count) => {
+      let switch_env = env.child()
       let switch_label = self.next_switch_entry("switch")
-      let switch_entry = ResolutionStackSwitchEntry::new(switch_label)
-      env.push(Switch(switch_entry))
-      let new_expr = self.resolve_expr!(expr, env)
-      let new_body = self.resolve_stmt!(body, env)
-      env.pop()
-
-      let cases_count = switch_entry.cases.size() + if switch_entry.has_default { 1 } else { 0 }
+      switch_env.push(Switch(switch_label))
+      let new_expr = self.resolve_expr!(expr, switch_env)
+      let new_body = self.resolve_stmt!(body, switch_env)
 
       Switch(~expr=new_expr, ~body=new_body, ~label=Some(switch_label), ~cases_count)
     }
     Case(~expr, ~body) => {
-      let const = match expr {
-        Constant(n) => n
-        _ => raise CaseExprMustBeConstant
-      }
-
-      let switch_entry = match env.stack.get_innermost_switch_entry() {
-        Some(entry) => entry
-        None => raise CaseOutsideSwitch
-      }
-
-      if switch_entry.cases.contains(const) {
-        raise DuplicateCase(const)
-      }
-
-      switch_entry.cases.insert(const)
-
       let new_expr = self.resolve_expr!(expr, env)
       let new_body = self.resolve_stmt!(body, env)
-
       Case(~expr=new_expr, ~body=new_body)
     }
     Default(~body) => {
-      let switch_entry = match env.stack.get_innermost_switch_entry() {
-        Some(entry) => entry
-        None => raise DefaultOutsideSwitch
-      }
-
-      if switch_entry.has_default {
-        raise MultipleDefaultInSwitch
-      }
-
-      switch_entry.has_default = true
-
-      let new_body = self.resolve_stmt!(body, env)
-
-      Default(~body=new_body)
+      Default(~body=self.resolve_stmt!(body, env))
     }
     Null => Null
   }
@@ -464,7 +430,7 @@ fn collect_function_def_labels(self: NameResolutionPass, func: @parse.FunctionDe
 
 // Collect all the labels declared in this function (a goto can reference a label declared later in the function)
 fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, env: Env) -> @parse.FunctionDecl!NameResolutionError {
-  let { storage_class, return_type, name, params, body } = func
+  let { storage_class, return_ty, name, params, body } = func
 
   env.goto_labels.clear() // Reset the goto labels for this function
   self.collect_function_def_labels!(func, env.goto_labels)
@@ -492,7 +458,7 @@ fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, en
     None => None
   }
 
-  { storage_class, return_type, name, params: new_params, body: new_body }
+  { storage_class, return_ty, name, params: new_params, body: new_body }
 }
 
 pub fn resolved(self: NameResolutionPass, program: @parse.Program) -> @parse.Program!NameResolutionError {

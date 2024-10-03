@@ -11,17 +11,18 @@ pub enum Token {
   AmpersandEqual; PipeEqual; CaretEqual; LshiftEqual; RshiftEqual
   PlusPlus; MinusMinus
   // keywords
-  Int; Return; Void; If; Else; Goto
+  Int; Long
+  Return; Void; If; Else; Goto
   Do; While; For; Break; Continue
   Switch; Case; Default
   Static; Extern
   // literals
-  IntLiteral(Int)
+  IntLiteral(Int); LongLiteral(Int64)
   // identifiers
   Identifier(String)
 } derive(Eq)
 
-pub fn to_binop(self: Token) -> Option[BinaryOp] {
+pub fn to_binop(self: Token) -> BinaryOp? {
   match self {
     Plus => Some(Add)
     Minus => Some(Sub)
@@ -57,10 +58,17 @@ pub fn to_binop(self: Token) -> Option[BinaryOp] {
   }
 }
 
+pub fn is_type_specifier(self: Token) -> Bool {
+  match self {
+    Int | Long => true
+    _ => false
+  }
+}
+
 pub fn is_specifier(self: Token) -> Bool {
   match self {
-    Int | Extern | Static => true
-    _ => false
+    Extern | Static => true
+    _ => self.is_type_specifier()
   }
 }
 
@@ -108,6 +116,7 @@ pub impl Show for Token with output(self, logger: Logger) {
     PlusPlus => "++"
     MinusMinus => "--"
     Int => "int"
+    Long => "long"
     Return => "return"
     Void => "void"
     If => "if"
@@ -124,6 +133,7 @@ pub impl Show for Token with output(self, logger: Logger) {
     Static => "static"
     Extern => "extern"
     IntLiteral(n) => n.to_string()
+    LongLiteral(n) => n.to_string()
     Identifier(s) => s
   })
 }

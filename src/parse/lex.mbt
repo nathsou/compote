@@ -6,7 +6,7 @@ pub struct Lexer {
 
 pub type! LexerError {
   UnexepectedChar(Char)
-  InvalidIntegerChar(Char)
+  InvalidIntegerLiteral(String)
 } derive(Show)
 
 fn is_whitespace(c: Char) -> Bool {
@@ -72,22 +72,58 @@ fn skip_whitespaces(self: Lexer) -> Unit {
   }
 }
 
-fn parse_integer(self: Lexer) -> Int!LexerError {
-  let mut value = 0
+enum ParsedInt {
+  Int(Int)
+  Long(Int64)
+}
+
+fn parse_integer(self: Lexer) -> ParsedInt!LexerError {
+  let mut digits = ""
   
   for i in self.index..<self.input.length() {
     let char = self.input[i]
+
     if is_digit(char) {
-      value = value * 10 + (char.to_int() - 48)
+      digits += char.to_string()
       self.advance()
-    } else if is_alpha(char) {
-      raise InvalidIntegerChar(char)
     } else {
       break
     }
   }
 
-  value
+  let mut suffix = ""
+
+  while self.index < self.input.length() {
+    let char = self.peek()
+
+    if is_alphanumeric(char) {
+      suffix += char.to_string()
+      self.advance()
+    } else {
+      break
+    }
+  }
+
+  let is_long = match suffix {
+    "" => false
+    "l" | "L" => true
+    _ => raise InvalidIntegerLiteral(digits + suffix)
+  }
+
+  match @strconv.parse_int64?(digits) {
+    Err(_) => raise InvalidIntegerLiteral(digits)
+    Ok(value) => match is_long {
+      true => Long(value)
+      false => {
+        // if the value is out of range for an int, return a long
+        if value > @int.max_value.to_int64() || value < @int.min_value.to_int64() {
+          Long(value)
+        } else {
+          Int(value.to_int())
+        }
+      }
+    }
+  }
 }
 
 fn parse_identifier(self: Lexer) -> String {
@@ -298,13 +334,17 @@ fn next(self: Lexer) -> LexerResult {
       if is_digit(char) {
         match self.parse_integer?() {
           Err(error) => return Err(error)
-          Ok(value) => Ok(IntLiteral(value))
+          Ok(value) => match value {
+            Int(n) => Ok(IntLiteral(n))
+            Long(n) => Ok(LongLiteral(n))
+          }
         }
       } else if is_alpha(char) || char == '_' {
         let identifier = self.parse_identifier()
 
         Ok(match identifier {
           "int" => Int
+          "long" => Long
           "return" => Return
           "void" => Void
           "if" => If

@@ -1,11 +1,13 @@
 
 pub enum Type {
   Int
-  FunType(~param_count: Int)
+  Long
+  FunType(~params: Array[Type], ~ret: Type)
 } derive(Eq)
 
 pub enum Constant {
   IntConst(Int)
+  LongConst(Int64)
 } derive (Eq, Hash)
 
 pub enum StorageClass {
@@ -13,13 +15,14 @@ pub enum StorageClass {
 } derive(Eq)
 
 pub enum Expr {
-  Constant(Constant)
-  Variable(String)
-  Unary(~op: UnaryOp, ~expr: Expr)
-  Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr)
-  Assignment(~op: AssignmentOp, ~lhs: Expr, ~rhs: Expr)
-  Conditional(~cond: Expr, ~then: Expr, ~otherwise: Expr)
-  Call(~name: String, ~args: Array[Expr])
+  Constant(~const: Constant, ~ty: Type?)
+  Variable(~name: String, ~ty: Type?)
+  Cast(~target_ty: Type, ~expr: Expr, ~ty: Type?)
+  Unary(~op: UnaryOp, ~expr: Expr, ~ty: Type?)
+  Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr, ~ty: Type?)
+  Assignment(~op: AssignmentOp, ~lhs: Expr, ~rhs: Expr, ~ty: Type?)
+  Conditional(~cond: Expr, ~then: Expr, ~otherwise: Expr, ~ty: Type?)
+  Call(~name: String, ~args: Array[Expr], ~ty: Type?)
 }
 
 pub enum Stmt {
@@ -49,22 +52,22 @@ pub enum ForInit {
   InitEmpty
   InitDecl(VariableDecl)
   InitExpr(Expr)
-}
+} derive(Show)
 
 pub struct VariableDecl {
   ty: Type
   name: String
   value: Expr?
   storage_class: StorageClass?
-}
+} derive(Show)
 
 pub struct FunctionParam {
   ty: Type
   name: String
-}
+} derive(Show)
 
 pub struct FunctionDecl {
-  return_type: Type
+  return_ty: Type
   name: String
   params: Array[FunctionParam]
   body: Array[BlockItem]?
@@ -74,7 +77,7 @@ pub struct FunctionDecl {
 pub enum Decl {
   VarDecl(VariableDecl)
   FunDecl(FunctionDecl)
-}
+} derive(Show)
 
 pub struct Program {
   decls: Array[Decl]
@@ -114,5 +117,33 @@ pub fn precedence(self: BinaryOp) -> Int {
     LogicalOr => 5
     Ternary => 3
     Assignment(_) => 1
+  }
+}
+
+pub fn to_type(self: FunctionDecl) -> Type {
+  FunType(~params=self.params.map(fn(param) { param.ty }), ~ret=self.return_ty)
+}
+
+pub fn ty(self: Expr) -> Type {
+  (match self {
+    Constant(~const=_, ~ty) => ty
+    Variable(~name=_, ~ty) => ty
+    Cast(~target_ty=_, ~expr=_, ~ty) => ty
+    Unary(~op=_, ~expr=_, ~ty) => ty
+    Binary(~op=_, ~lhs=_, ~rhs=_, ~ty) => ty
+    Assignment(~op=_, ~lhs=_, ~rhs=_, ~ty) => ty
+    Conditional(~cond=_, ~then=_, ~otherwise=_, ~ty) => ty
+    Call(~name=_, ~args=_, ~ty) => ty
+  }).unwrap()
+}
+
+
+pub fn fit_const_to_type(const: Constant, ty: Type) -> Constant! {
+  match (const, ty) {
+    (IntConst(n), Int) => IntConst(n)
+    (IntConst(n), Long) => LongConst(n.to_int64())
+    (LongConst(n), Int) => IntConst(n.to_int())
+    (LongConst(n), Long) => LongConst(n)
+    _ => raise Failure("Invalid constant type conversion")
   }
 }

@@ -21,7 +21,7 @@ fn symbol(self: OperatingSystem, name: String) -> String {
   }
 }
 
-fn align(self: OperatingSystem, n: Int) -> String {
+fn align(self: OperatingSystem, n: Int64) -> String {
   match self {
     Linux => ".balign \{n}" // could also use .align directive
     MacOS => ".balign \{n}"
@@ -60,7 +60,7 @@ fn emit(self: Emitter, line: String) -> Unit {
   self.lines.push(repeat_string("  ", self.indentation) + line)
 }
 
-fn asm(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String!EmitterError {
+fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String!EmitterError {
   match self {
     Imm(n) => "$\{n}"
     Reg(reg) => match reg {
@@ -109,31 +109,45 @@ fn asm(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String!EmitterEr
         Long => "%r11d"
         Quad => "%r11"
       }
+      SP => match size {
+        Byte => "%spl"
+        Long => "%esp"
+        Quad => "%rsp"
+      }
     }
-    RegSize(reg, size) => Reg(reg).asm!(size, os)
+    RegSize(reg, size) => Reg(reg).asm_reg_size!(size, os)
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
     Data(name) => os.symbol(name) + "(%rip)"
   }
 }
 
+fn asm(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String!EmitterError {
+  let size = match ty {
+    LongWord => Long
+    QuadWord => Quad
+  }
+
+  self.asm_reg_size!(size, os)
+}
+
 fn asm(self: AsmUnaryOp) -> String {
   match self {
-    Neg => "negl"
-    BitwiseNot => "notl"
+    Neg => "neg"
+    BitwiseNot => "not"
   }
 }
 
 fn asm(self: AsmBinaryOp) -> String {
   match self {
-    Add => "addl"
-    Sub => "subl"
+    Add => "add"
+    Sub => "sub"
     Mul => "imul"
-    Shl => "shll"
-    Sal => "sarl"
-    And => "andl"
-    Or => "orl"
-    Xor => "xorl"
+    Shl => "shl"
+    Sal => "sar"
+    And => "and"
+    Or => "or"
+    Xor => "xor"
   }
 }
 
@@ -150,26 +164,32 @@ fn suffix(self: CondCode) -> String {
 
 fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
   match inst {
-    Mov(~src, ~dst) => {
-      self.emit("movl \{src.asm!(Long, self.os)}, \{dst.asm!(Long, self.os)}")
+    Mov(~src, ~dst, ~ty) => {
+      self.emit("mov\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
     }
-    Unary(~op, ~dst) => {
-      self.emit("\{op.asm()} \{dst.asm!(Long, self.os)}")
+    Movsx(~src, ~dst) => {
+      self.emit("movslq \{src.asm!(LongWord, self.os)}, \{dst.asm!(QuadWord, self.os)}")
     }
-    Binary(~op=Shl | Sal as op, ~src, ~dst) => {
-      self.emit("\{op.asm()} \{src.asm!(Long, self.os)}, \{dst.asm!(Byte, self.os)}")
+    Unary(~op, ~dst, ~ty) => {
+      self.emit("\{op.asm()}\{ty.suffix()} \{dst.asm!(ty, self.os)}")
     }
-    Binary(~op, ~src, ~dst) => {
-      self.emit("\{op.asm()} \{src.asm!(Long, self.os)}, \{dst.asm!(Long, self.os)}")
+    Binary(~op=Shl | Sal as op, ~src, ~dst, ~ty) => {
+      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
     }
-    Cmp(~src, ~dst) => {
-      self.emit("cmpl \{src.asm!(Long, self.os)}, \{dst.asm!(Long, self.os)}")
+    Binary(~op, ~src, ~dst, ~ty) => {
+      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
     }
-    IDiv(~src) => {
-      self.emit("idivl \{src.asm!(Long, self.os)}")
+    Cmp(~src, ~dst, ~ty) => {
+      self.emit("cmp\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
     }
-    Cdq => {
-      self.emit("cdq")
+    IDiv(~src, ~ty) => {
+      self.emit("idiv\{ty.suffix()} \{src.asm!(ty, self.os)}")
+    }
+    Cdq(~ty) => {
+      match ty {
+        LongWord => self.emit("cdq")
+        QuadWord => self.emit("cqo")
+      }
     }
     Jmp(target) => {
       self.emit("jmp \{self.os.label(target)}")
@@ -178,19 +198,13 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
       self.emit("j\{cond.suffix()} \{self.os.label(target)}")
     }
     SetCond(~cond, ~dst) => {
-      self.emit("set\{cond.suffix()} \{dst.asm!(Byte, self.os)}")
+      self.emit("set\{cond.suffix()} \{dst.asm_reg_size!(Byte, self.os)}")
     }
     Label(name) => {
       self.emit(self.os.label(name) + ":")
     }
-    AllocateStack(~size) => {
-      self.emit("subq $\{size.abs()}, %rsp")
-    }
-    DeallocateStack(~size) => {
-      self.emit("addq $\{size.abs()}, %rsp")
-    }
     Push(operand) => {
-      self.emit("pushq \{operand.asm!(Quad, self.os)}")
+      self.emit("pushq \{operand.asm!(QuadWord, self.os)}")
     }
     Call(label) => {
       let suffix = match self.os {
@@ -238,23 +252,38 @@ fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit!EmitterError {
 }
 
 fn emit_static_variable_def(self: Emitter, var: AsmStaticVarDef) -> Unit {
-  let { name, global, init } = var
+  let { name, global, alignment, init } = var
   let name = self.os.symbol(name)
 
   if global {
     self.emit(".globl \{name}")
   }
 
-  if init == 0 {
-    self.emit(".bss")
-    self.emit(self.os.align(4))
-    self.emit("\{name}:")
-    self.emit(".zero 4")
-  } else {
-    self.emit(".data")
-    self.emit(self.os.align(4))
-    self.emit("\{name}:")
-    self.emit(".long \{init}")
+  match init {
+    IntInit(0) | LongInit(0) => {
+      self.emit(".bss")
+      self.emit(self.os.align(alignment))
+      self.emit("\{name}:")
+      
+      let size = match init {
+        IntInit(_) => 4
+        LongInit(_) => 8
+      }
+
+      self.emit(".zero \{size}")
+    }
+    IntInit(n) => {
+      self.emit(".data")
+      self.emit(self.os.align(alignment))
+      self.emit("\{name}:")
+      self.emit(".long \{n}")
+    }
+    LongInit(n) => {
+      self.emit(".data")
+      self.emit(self.os.align(alignment))
+      self.emit("\{name}:")
+      self.emit(".quad \{n}")
+    }
   }
 }
 

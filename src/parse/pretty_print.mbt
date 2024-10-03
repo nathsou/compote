@@ -33,7 +33,8 @@ fn write_string(self: PrettyPrinter, s: String) -> Unit {
 pub impl Show for Type with output(self, logger: Logger) {
   logger.write_string(match self {
     Int => "int"
-    FunType(~param_count) => "fun<int " + param_count.to_string() + ">"
+    Long => "long"
+    FunType(~params, ~ret) => "fun(" + params.map(Show::to_string).join(", ") + ") -> " + Show::to_string(ret)
   })
 }
 
@@ -98,24 +99,26 @@ pub impl Show for StorageClass with output(self, logger: Logger) {
 pub impl Show for Constant with output(self, logger: Logger) {
   logger.write_string(match self {
     IntConst(n) => n.to_string()
+    LongConst(n) => n.to_string() + "L"
   })
 }
 
 pub fn show_expr(expr: Expr) -> String {
   match expr {
-    Constant(n) => Show::to_string(n)
-    Variable(name) => name
-    Unary(~op, ~expr) => {
+    Constant(~const=n, ~ty=_) => Show::to_string(n)
+    Variable(~name, ~ty=_) => name
+    Cast(~target_ty, ~expr, ~ty=_) => "((" + Show::to_string(target_ty) + ")" + show_expr(expr) + ")"
+    Unary(~op, ~expr, ~ty=_) => {
       match op {
         Inc(~is_prefix=false) => "(" + show_expr(expr) + ")++"
         Dec(~is_prefix=true) => "(" + show_expr(expr)
         _ => Show::to_string(op) + "(" + show_expr(expr) + ")"
       }
     }
-    Binary(~op, ~lhs, ~rhs) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
-    Assignment(~op, ~lhs, ~rhs) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
-    Conditional(~cond, ~then, ~otherwise) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
-    Call(~name, ~args) => name + "(" + args.map(show_expr).join(", ") + ")"
+    Binary(~op, ~lhs, ~rhs, ~ty=_) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
+    Assignment(~op, ~lhs, ~rhs, ~ty=_) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
+    Conditional(~cond, ~then, ~otherwise, ~ty=_) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
+    Call(~name, ~args, ~ty=_) => name + "(" + args.map(show_expr).join(", ") + ")"
   }
 }
 
@@ -289,7 +292,7 @@ pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
     Show::to_string(param.ty) + " " + param.name
   }).join(", ")
 
-  self.emit(storage_class + Show::to_string(func.return_type) + " " + func.name + "(" + params + ")" + if func.body.is_empty() {
+  self.emit(storage_class + Show::to_string(func.return_ty) + " " + func.name + "(" + params + ")" + if func.body.is_empty() {
     ";"
   } else {
     " {"
