@@ -73,6 +73,16 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
   "case_fallthrough_" + switch_label + "." + case_index.to_string()
 }
 
+fn cast_expr(src: TacValue, dst: TacValue, target_ty: @parse.Type) -> TacInst!TacBuilderError {
+    // assuming src.ty != dst.ty
+
+    match target_ty {
+      Long => SignExtend(~src, ~dst)
+      Int => Truncate(~src, ~dst)
+      _ => raise TacBuilderError::Unreachable("unsupported cast")
+    }
+}
+
 fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError {
   match expr {
     Constant(~const, ~ty=_) => Constant(const)
@@ -85,12 +95,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       } else {
         let dst_name = self.next_temp_var(target_ty)
         let dst = TacValue::Variable(dst_name)
-
-        if target_ty == Long {
-          self.emit(SignExtend(~src=res, ~dst))
-        } else {
-          self.emit(Truncate(~src=res, ~dst))
-        }
+        self.emit(cast_expr!(res, dst, target_ty))
 
         dst
       }
@@ -164,7 +169,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Binary(~op, ~lhs=v1, ~rhs=v2, ~dst))
       dst
     }
-    Assignment(~op, ~lhs=Variable(~name, ~ty=_) as lhs, ~rhs, ~ty) => {
+    Assignment(~op, ~lhs=Variable(~name, ~ty=Some(lhs_ty)), ~rhs, ~ty=Some(res_ty)) => {
       let compound_op: Option[@parse.BinaryOp] = match op {
         AssignAdd => Some(Add)
         AssignSub => Some(Sub)
@@ -179,14 +184,27 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
         Assign => None
       }
 
-      let src = self.convert_expr!(match compound_op {
-        Some(op) => Binary(~op, ~lhs, ~rhs, ~ty)
-        None => rhs
-      })
-
+      let rhs = self.convert_expr!(rhs)
       let dst = TacValue::Variable(name)
-      self.emit(Copy(~src, ~dst))
-      dst
+
+      match compound_op {
+        Some(op) => {
+          if lhs_ty == res_ty {
+            self.emit(Binary(~op, lhs=dst, ~rhs, ~dst))
+          } else {
+            let tmp = TacValue::Variable(self.next_temp_var(res_ty))
+            self.emit(cast_expr!(dst, tmp, res_ty))
+            self.emit(Binary(~op, lhs=tmp, ~rhs, ~dst=tmp))
+            self.emit(cast_expr!(tmp, dst, lhs_ty))
+          }
+
+          dst
+        }
+        None => {
+          self.emit(Copy(~src=rhs, ~dst))
+          dst
+        }
+      }
     }
     Assignment(~op=_, ~lhs, ~rhs=_, ~ty=_) => raise InvalidAssignmentTarget(lhs)
     Conditional(~cond, ~then, ~otherwise, ~ty) => {

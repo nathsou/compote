@@ -282,7 +282,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
       LongConst(_) => Constant(~const, ~ty=Some(Long))
     }
     Variable(~name, ~ty=_) => {
-      match self.symbols.get(name) {
+      match self.symbols[name] {
         Some(Variable(~ty=var_ty, attributes=_)) => Variable(~name=name, ~ty=Some(var_ty))
         Some(Function(_)) => raise FunctionNameUsedAsVariable(name)
         None => raise UndefinedSymbol(name)
@@ -306,6 +306,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
       let lhs = self.typed_expr!(lhs)
       let rhs = self.typed_expr!(rhs)
       match op {
+        Shl | Shr => Binary(~op, ~lhs, ~rhs, ~ty=Some(lhs.ty()))
         LogicalAnd | LogicalOr => Binary(~op, ~lhs, ~rhs, ~ty=Some(Int))
         _ => {
           let common_ty = get_common_type!(lhs.ty(), rhs.ty())
@@ -313,12 +314,13 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
           let rhs = cast(rhs, common_ty)
 
           match op {
-            Add | Sub | Mul | Div | Shl | Shr | Rem | Assignment(_) | BitwiseAnd | BitwiseOr | BitwiseXor => {
+            Add | Sub | Mul | Div | Rem | BitwiseAnd | BitwiseOr | BitwiseXor => {
               Binary(~op, ~lhs, ~rhs, ~ty=Some(common_ty))
             }
             Lss | Leq | Gtr | Geq | Equ | Neq | LogicalAnd | LogicalOr | Ternary => {
               Binary(~op, ~lhs, ~rhs, ~ty=Some(Int))
             }
+            _ => raise TypeCheckerError::Unreachable("unhandled binary operator")
           }
         }
       }
@@ -326,9 +328,16 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
     Assignment(~op, ~lhs, ~rhs, ~ty=_) => {
       let lhs = self.typed_expr!(lhs)
       let rhs = self.typed_expr!(rhs)
-      let lhs_ty = lhs.ty()
-      let rhs = cast(rhs, lhs_ty)
-      Assignment(~op, ~lhs, ~rhs, ~ty=Some(lhs_ty))
+
+      match op {
+        AssignShl | AssignShr => {
+          Assignment(~op, ~lhs, ~rhs, ~ty=Some(lhs.ty()))
+        }
+        _ => {
+          let common_ty = get_common_type!(lhs.ty(), rhs.ty())
+          Assignment(~op, ~lhs, ~rhs=cast(rhs, common_ty), ~ty=Some(common_ty))
+        }
+      }
     }
     Conditional(~cond, ~then, ~otherwise, ~ty=_) => {
       let cond = self.typed_expr!(cond)
@@ -389,8 +398,8 @@ pub fn typed_stmt(self: TypeChecker, stmt: @parse.Stmt) -> @parse.Stmt!TypeCheck
 
       If(~cond, ~then, ~otherwise)
     }
-    Labeled(~label=_, ~stmt) => {
-      self.typed_stmt!(stmt)
+    Labeled(~label, ~stmt) => {
+      Labeled(~label, ~stmt=self.typed_stmt!(stmt))
     }
     Compound(block) => {
       Compound(self.typed_block!(block))

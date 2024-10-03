@@ -1,17 +1,7 @@
 
-pub struct ResolutionStackSwitchEntry {
-  label: String
-  cases: @hashset.T[@parse.Constant]
-  mut has_default: Bool
-}
-
-pub fn ResolutionStackSwitchEntry::new(label: String) -> ResolutionStackSwitchEntry {
-  { label, cases: @hashset.new(), has_default: false }
-}
-
-pub enum ResolutionStackEntry {
+enum ResolutionStackEntry {
   Loop(String)
-  Switch(ResolutionStackSwitchEntry)
+  Switch(String)
 }
 
 pub type ResolutionStack Array[ResolutionStackEntry]
@@ -36,17 +26,6 @@ pub fn ResolutionStack::get_innermost_loop_label(self: ResolutionStack) -> Strin
   for i = self._.length() - 1; i >= 0; i = i -1 {
     match self._[i] {
       Loop(label) => return Some(label)
-      _ => ()
-    }
-  }
-
-  None
-}
-
-pub fn ResolutionStack::get_innermost_switch_entry(self: ResolutionStack) -> ResolutionStackSwitchEntry? {
-  for i = self._.length() - 1; i >= 0; i = i - 1 {
-    match self._[i] {
-      Switch(entry) => return Some(entry)
       _ => ()
     }
   }

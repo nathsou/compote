@@ -19,11 +19,6 @@ pub type! NameResolutionError {
   UndeclaredLabel(String)
   BreakOutsideLoopOrSwitch
   ContinueOutsideLoop
-  CaseOutsideSwitch
-  DefaultOutsideSwitch
-  CaseExprMustBeConstant
-  DuplicateCase(@parse.Constant)
-  MultipleDefaultInSwitch
   UndeclaredFunction(String)
   DuplicateFunctionDeclaration(String)
   FunctionDefinitionShouldBeTopLevel(String)
@@ -192,7 +187,7 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
         Some(_) => raise NameResolutionError::Unreachable("break with label before resolution")
         None => {
           match env.stack.peek() {
-            Some(Loop(label) | Switch({ label, cases: _, has_default: _ })) => Break(~label=Some(label))
+            Some(Loop(label) | Switch(label)) => Break(~label=Some(label))
             None => raise BreakOutsideLoopOrSwitch
           }
         }
@@ -256,55 +251,22 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
 
       For(~init=new_init, ~cond=new_cond, ~post=new_post, ~body, ~label=Some(loop_label))
     }
-    Switch(~expr, ~body, ~label=_, ~cases_count=_) => {
+    Switch(~expr, ~body, ~label=_, ~cases_count) => {
+      let switch_env = env.child()
       let switch_label = self.next_switch_entry("switch")
-      let switch_entry = ResolutionStackSwitchEntry::new(switch_label)
-      env.push(Switch(switch_entry))
-      let new_expr = self.resolve_expr!(expr, env)
-      let new_body = self.resolve_stmt!(body, env)
-      env.pop()
-
-      let cases_count = switch_entry.cases.size() + if switch_entry.has_default { 1 } else { 0 }
+      switch_env.push(Switch(switch_label))
+      let new_expr = self.resolve_expr!(expr, switch_env)
+      let new_body = self.resolve_stmt!(body, switch_env)
 
       Switch(~expr=new_expr, ~body=new_body, ~label=Some(switch_label), ~cases_count)
     }
     Case(~expr, ~body) => {
-      let const = match expr {
-        Constant(~const=n, ~ty=_) => n
-        _ => raise CaseExprMustBeConstant
-      }
-
-      let switch_entry = match env.stack.get_innermost_switch_entry() {
-        Some(entry) => entry
-        None => raise CaseOutsideSwitch
-      }
-
-      if switch_entry.cases.contains(const) {
-        raise DuplicateCase(const)
-      }
-
-      switch_entry.cases.insert(const)
-
       let new_expr = self.resolve_expr!(expr, env)
       let new_body = self.resolve_stmt!(body, env)
-
       Case(~expr=new_expr, ~body=new_body)
     }
     Default(~body) => {
-      let switch_entry = match env.stack.get_innermost_switch_entry() {
-        Some(entry) => entry
-        None => raise DefaultOutsideSwitch
-      }
-
-      if switch_entry.has_default {
-        raise MultipleDefaultInSwitch
-      }
-
-      switch_entry.has_default = true
-
-      let new_body = self.resolve_stmt!(body, env)
-
-      Default(~body=new_body)
+      Default(~body=self.resolve_stmt!(body, env))
     }
     Null => Null
   }

@@ -52,19 +52,19 @@ pub enum ForInit {
   InitEmpty
   InitDecl(VariableDecl)
   InitExpr(Expr)
-}
+} derive(Show)
 
 pub struct VariableDecl {
   ty: Type
   name: String
   value: Expr?
   storage_class: StorageClass?
-}
+} derive(Show)
 
 pub struct FunctionParam {
   ty: Type
   name: String
-}
+} derive(Show)
 
 pub struct FunctionDecl {
   return_ty: Type
@@ -77,7 +77,7 @@ pub struct FunctionDecl {
 pub enum Decl {
   VarDecl(VariableDecl)
   FunDecl(FunctionDecl)
-}
+} derive(Show)
 
 pub struct Program {
   decls: Array[Decl]
@@ -135,4 +135,15 @@ pub fn ty(self: Expr) -> Type {
     Conditional(~cond=_, ~then=_, ~otherwise=_, ~ty) => ty
     Call(~name=_, ~args=_, ~ty) => ty
   }).unwrap()
+}
+
+
+pub fn fit_const_to_type(const: Constant, ty: Type) -> Constant! {
+  match (const, ty) {
+    (IntConst(n), Int) => IntConst(n)
+    (IntConst(n), Long) => LongConst(n.to_int64())
+    (LongConst(n), Int) => IntConst(n.to_int())
+    (LongConst(n), Long) => LongConst(n)
+    _ => raise Failure("Invalid constant type conversion")
+  }
 }
