@@ -2,6 +2,7 @@
 pub enum InitialValue {
   Tentative; Initial(StaticInit); NoInitializer
 }
+
 fn convert_to(const: @parse.Constant, ty: @parse.Type) -> StaticInit!TypeCheckerError {
   match ty {
     Int => match const {
@@ -18,7 +19,7 @@ fn convert_to(const: @parse.Constant, ty: @parse.Type) -> StaticInit!TypeChecker
 
 pub enum StaticInit {
   IntInit(Int); LongInit(Int64)
-}
+} derive(Show, Eq)
 
 pub enum IdentifierAttributes {
   FunAttr(~defined: Bool, ~global: Bool)
@@ -29,6 +30,12 @@ pub enum IdentifierAttributes {
 pub enum SymbolTableEntry {
   Variable(~ty: @parse.Type, ~attributes: IdentifierAttributes)
   Function(~ty: @parse.Type, ~attributes: IdentifierAttributes)
+}
+
+pub fn ty(self: SymbolTableEntry) -> @parse.Type {
+  match self {
+    Variable(~ty, ~attributes=_) | Function(~ty, ~attributes=_) => ty
+  }
 }
 
 pub struct FunctionStackEntry {
@@ -118,7 +125,7 @@ fn typed_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> @p
         raise InitializerOnLocalExternVarDecl(decl.name)
       }
 
-      match self.symbols.get(decl.name) {
+      match self.symbols[decl.name] {
         Some(Variable(~ty, ~attributes=_) | Function(~ty, ~attributes=_)) => {
           if ty != decl.ty {
             raise VariableRedeclaredWithDifferentType(decl.name)
@@ -150,7 +157,7 @@ fn typed_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> @p
       self.symbols[decl.name] = Variable(~ty=decl.ty, ~attributes=LocalAttr)
 
       let value = match decl.value {
-        Some(value) => Some(self.typed_expr!(value))
+        Some(value) => Some(cast(self.typed_expr!(value), decl.ty))
         None => None
       }
 
@@ -304,7 +311,15 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
           let common_ty = get_common_type!(lhs.ty(), rhs.ty())
           let lhs = cast(lhs, common_ty)
           let rhs = cast(rhs, common_ty)
-          Binary(~op, ~lhs, ~rhs, ~ty=Some(common_ty))
+
+          match op {
+            Add | Sub | Mul | Div | Shl | Shr | Rem | Assignment(_) | BitwiseAnd | BitwiseOr | BitwiseXor => {
+              Binary(~op, ~lhs, ~rhs, ~ty=Some(common_ty))
+            }
+            Lss | Leq | Gtr | Geq | Equ | Neq | LogicalAnd | LogicalOr | Ternary => {
+              Binary(~op, ~lhs, ~rhs, ~ty=Some(Int))
+            }
+          }
         }
       }
     }
@@ -357,9 +372,7 @@ pub fn typed_stmt(self: TypeChecker, stmt: @parse.Stmt) -> @parse.Stmt!TypeCheck
       match self.function_stack.last() {
         Some({ name: _, return_ty }) => {
           let expr = self.typed_expr!(expr)
-          let expr_ty = expr.ty()
-          let common_ty = get_common_type!(return_ty, expr_ty)
-          Return(cast(expr, common_ty))
+          Return(cast(expr, return_ty))
         }
         None => raise TypeCheckerError::Unreachable("return statement outside of function")
       }

@@ -39,9 +39,11 @@ struct TacSwitchStackEntry {
   mut current_case_index: Int
 }
 
-fn next_temp_var() -> String {
+fn next_temp_var(self: TacBuilder, ty: @parse.Type) -> String {
   let var_name = "tmp." + ctx.next_var_id.to_string()
   ctx.next_var_id += 1
+  self.symbols[var_name] = Variable(~ty=ty, ~attributes=LocalAttr)
+
   var_name
 }
 
@@ -73,9 +75,27 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
 
 fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError {
   match expr {
-    Constant(~const=IntConst(n), ~ty=_) => Constant(n)
+    Constant(~const, ~ty=_) => Constant(const)
     Variable(~name, ~ty=_) => Variable(name)
-    Unary(~op, ~expr, ~ty=_) => {
+    Cast(~target_ty, ~expr, ~ty=_) => {
+      let res = self.convert_expr!(expr)
+
+      if target_ty == expr.ty() {
+        res
+      } else {
+        let dst_name = self.next_temp_var(target_ty)
+        let dst = TacValue::Variable(dst_name)
+
+        if target_ty == Long {
+          self.emit(SignExtend(~src=res, ~dst))
+        } else {
+          self.emit(Truncate(~src=res, ~dst))
+        }
+
+        dst
+      }
+    }
+    Unary(~op, ~expr, ~ty) => {
       let src = self.convert_expr!(expr)
 
       match op {
@@ -86,26 +106,26 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
           }
 
           if is_prefix {
-            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(1), ~dst=src))
+            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(IntConst(1)), ~dst=src))
             src
           } else {
             // introduce a temporary variable to store the original value
-            let tmp_name = next_temp_var()
+            let tmp_name = self.next_temp_var(ty.unwrap())
             let tmp = TacValue::Variable(tmp_name)
             self.emit(Copy(~src, ~dst=tmp))
-            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(1), ~dst=src))
+            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(IntConst(1)), ~dst=src))
             tmp
           }
         }
         _ => {
-          let dst = TacValue::Variable(next_temp_var()) 
+          let dst = TacValue::Variable(self.next_temp_var(ty.unwrap())) 
           self.emit(Unary(~op, ~src, ~dst))
           dst
         }
       }
     }
     Binary(~op=LogicalAnd, ~lhs, ~rhs, ~ty=_) => {
-      let result_name = next_temp_var()
+      let result_name = self.next_temp_var(expr.ty())
       let result = TacValue::Variable(result_name)
       let false_label = next_label("and_false")
       let end_label = next_label("and_end")
@@ -113,15 +133,15 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(JumpIfZero(~cond=v1, ~target=false_label))
       let v2 = self.convert_expr!(rhs)
       self.emit(JumpIfZero(~cond=v2, ~target=false_label))
-      self.emit(Copy(~src=Constant(1), ~dst=result))
+      self.emit(Copy(~src=Constant(IntConst(1)), ~dst=result))
       self.emit(Jump(end_label))
       self.emit(Label(false_label))
-      self.emit(Copy(~src=Constant(0), ~dst=result))
+      self.emit(Copy(~src=Constant(IntConst(0)), ~dst=result))
       self.emit(Label(end_label))
       result
     }
-    Binary(~op=LogicalOr, ~lhs, ~rhs, ~ty=_) => {
-      let result_name = next_temp_var()
+    Binary(~op=LogicalOr, ~lhs, ~rhs, ~ty) => {
+      let result_name = self.next_temp_var(ty.unwrap())
       let result = TacValue::Variable(result_name)
       let true_label = next_label("or_true")
       let end_label = next_label("or_end")
@@ -129,17 +149,17 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(JumpIfNotZero(~cond=v1, ~target=true_label))
       let v2 = self.convert_expr!(rhs)
       self.emit(JumpIfNotZero(~cond=v2, ~target=true_label))
-      self.emit(Copy(~src=Constant(0), ~dst=result))
+      self.emit(Copy(~src=Constant(IntConst(0)), ~dst=result))
       self.emit(Jump(end_label))
       self.emit(Label(true_label))
-      self.emit(Copy(~src=Constant(1), ~dst=result))
+      self.emit(Copy(~src=Constant(IntConst(1)), ~dst=result))
       self.emit(Label(end_label))
       result
     }
-    Binary(~op, ~lhs, ~rhs, ~ty=_) => {
+    Binary(~op, ~lhs, ~rhs, ~ty) => {
       let v1 = self.convert_expr!(lhs)
       let v2 = self.convert_expr!(rhs)
-      let dst_name = next_temp_var()
+      let dst_name = self.next_temp_var(ty.unwrap())
       let dst = TacValue::Variable(dst_name)
       self.emit(Binary(~op, ~lhs=v1, ~rhs=v2, ~dst))
       dst
@@ -169,11 +189,11 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       dst
     }
     Assignment(~op=_, ~lhs, ~rhs=_, ~ty=_) => raise InvalidAssignmentTarget(lhs)
-    Conditional(~cond, ~then, ~otherwise, ~ty=_) => {
+    Conditional(~cond, ~then, ~otherwise, ~ty) => {
       let cond = self.convert_expr!(cond)
       let else_label = next_label("ternary_else")
       let end_label = next_label("ternary_end")
-      let result = TacValue::Variable(next_temp_var())
+      let result = TacValue::Variable(self.next_temp_var(ty.unwrap()))
       self.emit(JumpIfZero(~cond, ~target=else_label))
       let then_value = self.convert_expr!(then)
       self.emit(Copy(~src=then_value, ~dst=result))
@@ -184,14 +204,14 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       self.emit(Label(end_label))
       result
     }
-    Call(~name, ~args, ~ty=_) => {
+    Call(~name, ~args, ~ty) => {
       let arg_values = []
 
       for arg in args {
         arg_values.push(self.convert_expr!(arg))
       }
 
-      let result = TacValue::Variable(next_temp_var())
+      let result = TacValue::Variable(self.next_temp_var(ty.unwrap()))
       self.emit(Call(~name, ~args=arg_values, ~dst=result))
       result
     }
@@ -368,7 +388,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       }
 
       self.emit(Label(get_case_label(switch_entry.label, case_index)))
-      let enter_case = TacValue::Variable(next_temp_var())
+      let enter_case = TacValue::Variable(self.next_temp_var(Int))
       self.emit(Binary(~op=Equ, ~lhs=switch_entry.subject, ~rhs=self.convert_expr!(expr), ~dst=enter_case))
       self.emit(JumpIfZero(~cond=enter_case, ~target=next_case_label))
       if case_index != 0 {
@@ -474,12 +494,22 @@ pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolT
   // collect static variables
   for name, entry in symbols {
     match entry {
-      Variable(~ty=_, ~attributes) => {
+      Variable(~ty, ~attributes) => {
         match attributes {
           StaticAttr(~init, ~global) => {
             match init {
-              Initial(IntInit(n)) => top_level.push(StaticVar(~name, ~global, ~init=n))
-              Tentative => top_level.push(StaticVar(~name, ~global, ~init=0))
+              Initial(init) => {
+                top_level.push(StaticVar(~name, ~global, ~init, ~ty))
+              }
+              Tentative => {
+                let init: @validate.StaticInit = match ty {
+                  Int => IntInit(0)
+                  Long => LongInit(0)
+                  _ => raise TacBuilderError::Unreachable("unsupported static variable type")
+                }
+
+                top_level.push(StaticVar(~name, ~global, ~init, ~ty))
+              }
               NoInitializer => ()
             }
           }
