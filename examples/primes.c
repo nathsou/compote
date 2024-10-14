@@ -15,11 +15,11 @@ int print_long(long n) {
 }
 
 int is_prime(long n) {
-    if (n < 2l || n % 2l == 0) return 0;
-    if (n == 2l) return 1;
+    if (n < 2 || n % 2 == 0) return 0;
+    if (n == 2) return 1;
 
-    for (long i = 3l; i * i <= n; i += 2l) {
-        if (n % i == 0l) {
+    for (long i = 3; i * i <= n; i += 2) {
+        if (n % i == 0) {
             return 0;
         }
     }

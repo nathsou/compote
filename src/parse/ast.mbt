@@ -2,12 +2,16 @@
 pub enum Type {
   Int
   Long
+  UnsignedInt
+  UnsignedLong
   FunType(~params: Array[Type], ~ret: Type)
 } derive(Eq)
 
 pub enum Constant {
   IntConst(Int)
   LongConst(Int64)
+  UnsignedIntConst(UInt)
+  UnsignedLongConst(UInt64)
 } derive (Eq, Hash)
 
 pub enum StorageClass {
