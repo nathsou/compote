@@ -42,7 +42,7 @@ struct TacSwitchStackEntry {
 fn next_temp_var(self: TacBuilder, ty: @parse.Type) -> String {
   let var_name = "tmp." + ctx.next_var_id.to_string()
   ctx.next_var_id += 1
-  self.symbols[var_name] = Variable(~ty=ty, ~attributes=LocalAttr)
+  self.symbols[var_name] = Variable(ty=ty, attributes=LocalAttr)
 
   var_name
 }
@@ -85,9 +85,9 @@ fn cast_expr(src: TacValue, dst: TacValue, target_ty: @parse.Type) -> TacInst!Ta
 
 fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError {
   match expr {
-    Constant(~const, ~ty=_) => Constant(const)
-    Variable(~name, ~ty=_) => Variable(name)
-    Cast(~target_ty, ~expr, ~ty=_) => {
+    Constant(~const, ty=_) => Constant(const)
+    Variable(~name, ty=_) => Variable(name)
+    Cast(~target_ty, ~expr, ty=_) => {
       let res = self.convert_expr!(expr)
 
       if target_ty == expr.ty() {
@@ -111,14 +111,14 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
           }
 
           if is_prefix {
-            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(IntConst(1)), ~dst=src))
+            self.emit(Binary(~op, lhs=src, rhs=Constant(IntConst(1)), dst=src))
             src
           } else {
             // introduce a temporary variable to store the original value
             let tmp_name = self.next_temp_var(ty.unwrap())
             let tmp = TacValue::Variable(tmp_name)
-            self.emit(Copy(~src, ~dst=tmp))
-            self.emit(Binary(~op, ~lhs=src, ~rhs=Constant(IntConst(1)), ~dst=src))
+            self.emit(Copy(~src, dst=tmp))
+            self.emit(Binary(~op, lhs=src, rhs=Constant(IntConst(1)), dst=src))
             tmp
           }
         }
@@ -129,35 +129,35 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
         }
       }
     }
-    Binary(~op=LogicalAnd, ~lhs, ~rhs, ~ty=_) => {
+    Binary(op=LogicalAnd, ~lhs, ~rhs, ty=_) => {
       let result_name = self.next_temp_var(expr.ty())
       let result = TacValue::Variable(result_name)
       let false_label = next_label("and_false")
       let end_label = next_label("and_end")
       let v1 = self.convert_expr!(lhs)
-      self.emit(JumpIfZero(~cond=v1, ~target=false_label))
+      self.emit(JumpIfZero(cond=v1, target=false_label))
       let v2 = self.convert_expr!(rhs)
-      self.emit(JumpIfZero(~cond=v2, ~target=false_label))
-      self.emit(Copy(~src=Constant(IntConst(1)), ~dst=result))
+      self.emit(JumpIfZero(cond=v2, target=false_label))
+      self.emit(Copy(src=Constant(IntConst(1)), dst=result))
       self.emit(Jump(end_label))
       self.emit(Label(false_label))
-      self.emit(Copy(~src=Constant(IntConst(0)), ~dst=result))
+      self.emit(Copy(src=Constant(IntConst(0)), dst=result))
       self.emit(Label(end_label))
       result
     }
-    Binary(~op=LogicalOr, ~lhs, ~rhs, ~ty) => {
+    Binary(op=LogicalOr, ~lhs, ~rhs, ~ty) => {
       let result_name = self.next_temp_var(ty.unwrap())
       let result = TacValue::Variable(result_name)
       let true_label = next_label("or_true")
       let end_label = next_label("or_end")
       let v1 = self.convert_expr!(lhs)
-      self.emit(JumpIfNotZero(~cond=v1, ~target=true_label))
+      self.emit(JumpIfNotZero(cond=v1, target=true_label))
       let v2 = self.convert_expr!(rhs)
-      self.emit(JumpIfNotZero(~cond=v2, ~target=true_label))
-      self.emit(Copy(~src=Constant(IntConst(0)), ~dst=result))
+      self.emit(JumpIfNotZero(cond=v2, target=true_label))
+      self.emit(Copy(src=Constant(IntConst(0)), dst=result))
       self.emit(Jump(end_label))
       self.emit(Label(true_label))
-      self.emit(Copy(~src=Constant(IntConst(1)), ~dst=result))
+      self.emit(Copy(src=Constant(IntConst(1)), dst=result))
       self.emit(Label(end_label))
       result
     }
@@ -166,10 +166,10 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       let v2 = self.convert_expr!(rhs)
       let dst_name = self.next_temp_var(ty.unwrap())
       let dst = TacValue::Variable(dst_name)
-      self.emit(Binary(~op, ~lhs=v1, ~rhs=v2, ~dst))
+      self.emit(Binary(~op, lhs=v1, rhs=v2, ~dst))
       dst
     }
-    Assignment(~op, ~lhs=Variable(~name, ~ty=Some(lhs_ty)), ~rhs, ~ty=Some(res_ty)) => {
+    Assignment(~op, lhs=Variable(~name, ty=Some(lhs_ty)), ~rhs, ty=Some(res_ty)) => {
       let compound_op: Option[@parse.BinaryOp] = match op {
         AssignAdd => Some(Add)
         AssignSub => Some(Sub)
@@ -194,31 +194,31 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
           } else {
             let tmp = TacValue::Variable(self.next_temp_var(res_ty))
             self.emit(cast_expr!(dst, tmp, res_ty))
-            self.emit(Binary(~op, lhs=tmp, ~rhs, ~dst=tmp))
+            self.emit(Binary(~op, lhs=tmp, ~rhs, dst=tmp))
             self.emit(cast_expr!(tmp, dst, lhs_ty))
           }
 
           dst
         }
         None => {
-          self.emit(Copy(~src=rhs, ~dst))
+          self.emit(Copy(src=rhs, ~dst))
           dst
         }
       }
     }
-    Assignment(~op=_, ~lhs, ~rhs=_, ~ty=_) => raise InvalidAssignmentTarget(lhs)
+    Assignment(op=_, ~lhs, rhs=_, ty=_) => raise InvalidAssignmentTarget(lhs)
     Conditional(~cond, ~then, ~otherwise, ~ty) => {
       let cond = self.convert_expr!(cond)
       let else_label = next_label("ternary_else")
       let end_label = next_label("ternary_end")
       let result = TacValue::Variable(self.next_temp_var(ty.unwrap()))
-      self.emit(JumpIfZero(~cond, ~target=else_label))
+      self.emit(JumpIfZero(~cond, target=else_label))
       let then_value = self.convert_expr!(then)
-      self.emit(Copy(~src=then_value, ~dst=result))
+      self.emit(Copy(src=then_value, dst=result))
       self.emit(Jump(end_label))
       self.emit(Label(else_label))
       let otherwise_value = self.convert_expr!(otherwise)
-      self.emit(Copy(~src=otherwise_value, ~dst=result))
+      self.emit(Copy(src=otherwise_value, dst=result))
       self.emit(Label(end_label))
       result
     }
@@ -230,7 +230,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       }
 
       let result = TacValue::Variable(self.next_temp_var(ty.unwrap()))
-      self.emit(Call(~name, ~args=arg_values, ~dst=result))
+      self.emit(Call(~name, args=arg_values, dst=result))
       result
     }
   }
@@ -251,14 +251,14 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       match otherwise {
         None => {
           let end_label = next_label("if_end")
-          self.emit(JumpIfZero(~cond, ~target=end_label))
+          self.emit(JumpIfZero(~cond, target=end_label))
           self.convert_stmt!(then)
           self.emit(Label(end_label))
         }
         Some(otherwise) => {
           let else_label = next_label("if_else")
           let end_label = next_label("if_end")
-          self.emit(JumpIfZero(~cond, ~target=else_label))
+          self.emit(JumpIfZero(~cond, target=else_label))
           self.convert_stmt!(then)
           self.emit(Jump(end_label))
           self.emit(Label(else_label))
@@ -304,7 +304,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       let end_label = get_break_label(loop_label)
       self.emit(Label(start_label))
       let cond = self.convert_expr!(cond)
-      self.emit(JumpIfZero(~cond, ~target=end_label))
+      self.emit(JumpIfZero(~cond, target=end_label))
       self.convert_stmt!(body)
       self.emit(Jump(start_label))
       self.emit(Label(end_label))
@@ -320,7 +320,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       self.convert_stmt!(body)
       self.emit(Label(get_continue_label(loop_label)))
       let cond = self.convert_expr!(cond)
-      self.emit(JumpIfNotZero(~cond, ~target=start_label))
+      self.emit(JumpIfNotZero(~cond, target=start_label))
       self.emit(Label(get_break_label(loop_label)))
     }
     For(~init, ~cond, ~post, ~body, ~label) => {
@@ -344,7 +344,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
       match cond {
         Some(cond) => {
           let cond = self.convert_expr!(cond)
-          self.emit(JumpIfZero(~cond, ~target=end_label))
+          self.emit(JumpIfZero(~cond, target=end_label))
         }
         None => ()
       }
@@ -407,8 +407,8 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit!TacBuilderError {
 
       self.emit(Label(get_case_label(switch_entry.label, case_index)))
       let enter_case = TacValue::Variable(self.next_temp_var(Int))
-      self.emit(Binary(~op=Equ, ~lhs=switch_entry.subject, ~rhs=self.convert_expr!(expr), ~dst=enter_case))
-      self.emit(JumpIfZero(~cond=enter_case, ~target=next_case_label))
+      self.emit(Binary(op=Equ, lhs=switch_entry.subject, rhs=self.convert_expr!(expr), dst=enter_case))
+      self.emit(JumpIfZero(cond=enter_case, target=next_case_label))
       if case_index != 0 {
         self.emit(Label(fallthrough_label))
       }
@@ -474,10 +474,10 @@ fn convert_function_def(func: @parse.FunctionDecl, symbols: Map[String, @validat
 
       // for now always add a "return 0;" at the end of the function
       // this handles the case where the function does not return a value
-      builder.convert_stmt!(Return(Constant(~const=IntConst(0), ~ty=Some(Int))))
+      builder.convert_stmt!(Return(Constant(const=IntConst(0), ty=Some(Int))))
 
       let global = match symbols.get(func.name) {
-        Some(Function(~ty=_, ~attributes=FunAttr(~global, ~defined=_))) => global
+        Some(Function(ty=_, attributes=FunAttr(~global, defined=_))) => global
         Some(Function(_)) => raise TacBuilderError::Unreachable("function symbol with invalid attributes")
         _ => raise TacBuilderError::Unreachable("function symbol not found")
       }

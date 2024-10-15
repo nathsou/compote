@@ -41,7 +41,7 @@ pub impl Show for TacProgram with output(self, logger: Logger) {
         logger.write_string("function ")
         logger.write_string(function.name)
         logger.write_string("(")
-        logger.write_string(function.params.join(", "))
+        logger.write_string(String::concat(function.params, separator=", "))
         logger.write_string(") {\n")
         
         for inst in function.body {
@@ -52,7 +52,7 @@ pub impl Show for TacProgram with output(self, logger: Logger) {
         
         logger.write_string("}\n")
       }
-      StaticVar(~name, ~global=_, ~init, ~ty=_) => {
+      StaticVar(~name, global=_, ~init, ty=_) => {
         logger.write_string("static \{name} = \{init}\n")
       }
     }

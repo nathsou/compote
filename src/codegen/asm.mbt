@@ -104,14 +104,14 @@ pub type BackendSymbolTable Map[String, BackendSymbolTableEntry]
 
 fn get_symbol_ty(self: BackendSymbolTable, name: String) -> AsmType! {
   match self._[name] {
-    Some(ObjEntry(~ty, ~is_static=_)) => ty
+    Some(ObjEntry(~ty, is_static=_)) => ty
     _ => raise Failure("symbol not found in symbol table")
   }
 }
 
 fn is_symbol_static(self: BackendSymbolTable, name: String) -> Bool {
   match self._[name] {
-    Some(ObjEntry(~ty=_, ~is_static)) => is_static
+    Some(ObjEntry(ty=_, ~is_static)) => is_static
     _ => false
   }
 }

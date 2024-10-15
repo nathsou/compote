@@ -91,7 +91,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
   match inst {
     Return(value) => {
       let src = value.asm()
-      self.emit(Mov(~src, ~dst=Reg(AX), ~ty=self.value_ty!(value)))
+      self.emit(Mov(~src, dst=Reg(AX), ty=self.value_ty!(value)))
       self.emit(Ret)
     }
     SignExtend(~src, ~dst) => {
@@ -102,35 +102,35 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
     Truncate(~src, ~dst) => {
       let src = src.asm()
       let dst = dst.asm()
-      self.emit(Mov(~src, ~dst, ~ty=LongWord))
+      self.emit(Mov(~src, ~dst, ty=LongWord))
     }
-    Unary(~op=Not, ~src, ~dst) => {
+    Unary(op=Not, ~src, ~dst) => {
       let src_ty = self.value_ty!(src)
       let dst_ty = self.value_ty!(dst)
       let src = src.asm()
       let dst = dst.asm()
-      self.emit(Cmp(~src=Imm(0), ~dst=src, ~ty=src_ty))
+      self.emit(Cmp(src=Imm(0), dst=src, ty=src_ty))
       // clear the destination register before the set instruction
-      self.emit(Mov(~src=Imm(0), ~dst, ~ty=dst_ty))
-      self.emit(SetCond(~cond=Eq, ~dst))
+      self.emit(Mov(src=Imm(0), ~dst, ty=dst_ty))
+      self.emit(SetCond(cond=Eq, ~dst))
     }
     Unary(~op, ~src, ~dst) => {
       let src_ty = self.value_ty!(src)
       let src = src.asm()
       let dst = dst.asm()
-      self.emit(Mov(~src, ~dst, ~ty=src_ty))
-      self.emit(Unary(~op=convert_unary_op!(op), ~dst, ~ty=src_ty))
+      self.emit(Mov(~src, ~dst, ty=src_ty))
+      self.emit(Unary(op=convert_unary_op!(op), ~dst, ty=src_ty))
     }
-    Binary(~op=Lss | Leq | Gtr | Geq | Equ | Neq as op, ~lhs, ~rhs, ~dst) => {
+    Binary(op=Lss | Leq | Gtr | Geq | Equ | Neq as op, ~lhs, ~rhs, ~dst) => {
       let lhs_ty = self.value_ty!(lhs)
       let dst_ty = self.value_ty!(dst)
       let lhs = lhs.asm()
       let rhs = rhs.asm()
       let dst = dst.asm()
-      self.emit(Cmp(~src=rhs, ~dst=lhs, ~ty=lhs_ty))
+      self.emit(Cmp(src=rhs, dst=lhs, ty=lhs_ty))
       // clear the destination register before the set instruction
-      self.emit(Mov(~src=Imm(0), ~dst, ~ty=dst_ty))
-      self.emit(SetCond(~cond=convert_cond_code!(op), ~dst))
+      self.emit(Mov(src=Imm(0), ~dst, ty=dst_ty))
+      self.emit(SetCond(cond=convert_cond_code!(op), ~dst))
     }
     Binary(~op, ~lhs, ~rhs, ~dst) => {
       let lhs_ty = self.value_ty!(lhs)
@@ -141,21 +141,21 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
       
       match op {
         Equ | Neq | Gtr | Geq | Lss | Leq => {
-          self.emit(Cmp(~src=rhs, ~dst=lhs, ~ty=lhs_ty))
+          self.emit(Cmp(src=rhs, dst=lhs, ty=lhs_ty))
           // clear the destination register before the set instruction
-          self.emit(Mov(~src=Imm(0), ~dst, ~ty=dst_ty))
-          self.emit(SetCond(~cond=convert_cond_code!(op), ~dst))
+          self.emit(Mov(src=Imm(0), ~dst, ty=dst_ty))
+          self.emit(SetCond(cond=convert_cond_code!(op), ~dst))
         }
         Div | Rem => {
           let output_reg = if op == Div { AX } else { DX }
-          self.emit(Mov(~src=lhs, ~dst=Reg(AX), ~ty=lhs_ty))
-          self.emit(Cdq(~ty=lhs_ty))
-          self.emit(IDiv(~src=rhs, ~ty=lhs_ty))
-          self.emit(Mov(~src=Reg(output_reg), ~dst, ~ty=lhs_ty))
+          self.emit(Mov(src=lhs, dst=Reg(AX), ty=lhs_ty))
+          self.emit(Cdq(ty=lhs_ty))
+          self.emit(IDiv(src=rhs, ty=lhs_ty))
+          self.emit(Mov(src=Reg(output_reg), ~dst, ty=lhs_ty))
         }
         _ => {
-          self.emit(Mov(~src=lhs, ~dst, ~ty=lhs_ty))
-          self.emit(Binary(~op=convert_binary_op!(op), ~src=rhs, ~dst, ~ty=lhs_ty))
+          self.emit(Mov(src=lhs, ~dst, ty=lhs_ty))
+          self.emit(Binary(op=convert_binary_op!(op), src=rhs, ~dst, ty=lhs_ty))
         }
       }
     }
@@ -165,14 +165,14 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
     JumpIfZero(~cond, ~target) => {
       let cond_ty = self.value_ty!(cond)
       let cond = cond.asm()
-      self.emit(Cmp(~src=Imm(0), ~dst=cond, ~ty=cond_ty))
-      self.emit(JmpCond(~cond=Eq, ~target))
+      self.emit(Cmp(src=Imm(0), dst=cond, ty=cond_ty))
+      self.emit(JmpCond(cond=Eq, ~target))
     }
     JumpIfNotZero(~cond, ~target) => {
       let cond_ty = self.value_ty!(cond)
       let cond = cond.asm()
-      self.emit(Cmp(~src=Imm(0), ~dst=cond, ~ty=cond_ty))
-      self.emit(JmpCond(~cond=Ne, ~target))
+      self.emit(Cmp(src=Imm(0), dst=cond, ty=cond_ty))
+      self.emit(JmpCond(cond=Ne, ~target))
     }
     Copy(~src, ~dst)  => {
       let ty = self.value_ty!(src)
@@ -195,12 +195,12 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
       let stack_padding: Int64 = if stack_args.length() % 2 == 1 { 8 } else { 0 }
 
       if stack_padding > 0 {
-        self.emit(Binary(~op=Sub, ~src=Imm(stack_padding), ~dst=Reg(SP), ~ty=QuadWord))
+        self.emit(Binary(op=Sub, src=Imm(stack_padding), dst=Reg(SP), ty=QuadWord))
       }
 
       for i, arg in reg_args {
         let asm_arg = arg.asm()
-        self.emit(Mov(~src=asm_arg, ~dst=Reg(arg_regs[i]), ~ty=self.value_ty!(arg)))
+        self.emit(Mov(src=asm_arg, dst=Reg(arg_regs[i]), ty=self.value_ty!(arg)))
       }
 
       // push the remaining arguments onto the stack in reverse order
@@ -217,7 +217,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
               self.emit(Push(asm_arg))
             } else {
               // if the argument is 4-bytes in memory, load it into a register first before pushing it
-              self.emit(Mov(~src=asm_arg, ~dst=Reg(AX), ~ty=asm_ty))
+              self.emit(Mov(src=asm_arg, dst=Reg(AX), ty=asm_ty))
               self.emit(Push(Reg(AX)))
             }
           }
@@ -229,13 +229,13 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
       let bytes_to_remove = (8).to_int64() * stack_args.length().to_int64() + stack_padding
 
       if bytes_to_remove > 0 {
-        self.emit(Binary(~op=Add, ~src=Imm(bytes_to_remove), ~dst=Reg(SP), ~ty=QuadWord))
+        self.emit(Binary(op=Add, src=Imm(bytes_to_remove), dst=Reg(SP), ty=QuadWord))
       }
 
       // retrieve the return value
       let dst_ty = self.value_ty!(dst)
       let dst = dst.asm()
-      self.emit(Mov(~src=Reg(AX), ~dst, ~ty=dst_ty))
+      self.emit(Mov(src=Reg(AX), ~dst, ty=dst_ty))
     }
   }
 }
@@ -254,7 +254,7 @@ pub fn asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry
   let builder = AsmBuilder::new(symbols)
 
   // placeholder for stack allocation
-  builder.emit(Binary(~op=Sub, ~src=Imm(0), ~dst=Reg(SP), ~ty=QuadWord))
+  builder.emit(Binary(op=Sub, src=Imm(0), dst=Reg(SP), ty=QuadWord))
 
   // copy arguments to the stack
   for i, param in self.params {
@@ -267,14 +267,14 @@ pub fn asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry
     if i < 6 {
       let dst = Pseudo(param)
       let src = Reg(arg_regs[i])
-      builder.emit(Mov(~src, ~dst, ~ty=param_ty))
+      builder.emit(Mov(~src, ~dst, ty=param_ty))
     } else {
       // the remaining arguments are passed on the stack
       // but we need to load them into the current stack frame
       let dst = Pseudo(param)
       // offset by 16 bytes for the return address and base pointer
       let offset = (16).to_int64() + (8).to_int64() * (i.to_int64() - 6)
-      builder.emit(Mov(~src=Stack(offset), ~dst, ~ty=param_ty))
+      builder.emit(Mov(src=Stack(offset), ~dst, ty=param_ty))
     }
   }
 
@@ -287,9 +287,9 @@ pub fn asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry
   // build the backend symbol table
   for name, entry in symbols {
     let backend_entry = match entry {
-      Function(~ty=_, ~attributes=FunAttr(~global=_, ~defined)) => FunEntry(~is_defined=defined)
-      Variable(~ty, ~attributes=StaticAttr(_)) => ObjEntry(~ty=convert_type!(ty), ~is_static=true)
-      Variable(~ty, ~attributes=LocalAttr) => ObjEntry(~ty=convert_type!(ty), ~is_static=false)
+      Function(ty=_, attributes=FunAttr(global=_, ~defined)) => FunEntry(is_defined=defined)
+      Variable(~ty, attributes=StaticAttr(_)) => ObjEntry(ty=convert_type!(ty), is_static=true)
+      Variable(~ty, attributes=LocalAttr) => ObjEntry(ty=convert_type!(ty), is_static=false)
       _ => raise AsmBuilderError::Unreachable("symbol table to entry not handled")
     }
 
@@ -305,7 +305,7 @@ pub fn asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry
   let aligned_stack_size = align_to_16_bytes(pass1.stack_offset.abs())
 
   // replace the placeholder with the actual stack allocation, aligned to 16 bytes
-  insts1[0] = Binary(~op=Sub, ~src=Imm(aligned_stack_size), ~dst=Reg(SP), ~ty=QuadWord)
+  insts1[0] = Binary(op=Sub, src=Imm(aligned_stack_size), dst=Reg(SP), ty=QuadWord)
 
   let insts2 = FixUpPass::run(insts1)
 

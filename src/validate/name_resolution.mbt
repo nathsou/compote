@@ -99,12 +99,12 @@ fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse
   match expr {
     Variable(~name, ~ty) => {
       match env.identifiers.resolve(name) {
-        Some({ new_name, has_linkage: _ }) => @parse.Variable(~name=new_name, ~ty=ty)
+        Some({ new_name, has_linkage: _ }) => @parse.Variable(name=new_name, ty=ty)
         None => raise UndeclaredVariable(name)
       }
     }
     Cast(~target_ty, ~expr, ~ty) => {
-      @parse.Cast(~target_ty, ~expr=self.resolve_expr!(expr, env), ~ty)
+      @parse.Cast(~target_ty, expr=self.resolve_expr!(expr, env), ~ty)
     }
     Constant(~const, ~ty) => @parse.Constant(~const, ~ty)
     Unary(~op, ~expr, ~ty) => {
@@ -117,21 +117,21 @@ fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse
         _ => ()
       }
 
-      @parse.Unary(~op, ~expr=self.resolve_expr!(expr, env), ~ty)
+      @parse.Unary(~op, expr=self.resolve_expr!(expr, env), ~ty)
     }
-    Binary(~op, ~lhs, ~rhs, ~ty) => @parse.Binary(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env), ~ty)
+    Binary(~op, ~lhs, ~rhs, ~ty) => @parse.Binary(~op, lhs=self.resolve_expr!(lhs, env), rhs=self.resolve_expr!(rhs, env), ~ty)
     Assignment(~op, ~lhs, ~rhs, ~ty) => {
       if not(is_lvalue(lhs)) {
         raise InvalidLvalue(Show::to_string(lhs))
       }
 
-      @parse.Expr::Assignment(~op, ~lhs=self.resolve_expr!(lhs, env), ~rhs=self.resolve_expr!(rhs, env), ~ty)
+      @parse.Expr::Assignment(~op, lhs=self.resolve_expr!(lhs, env), rhs=self.resolve_expr!(rhs, env), ~ty)
     }
     Conditional(~cond, ~then, ~otherwise, ~ty) => {
       @parse.Conditional(
-        ~cond=self.resolve_expr!(cond, env),
-        ~then=self.resolve_expr!(then, env),
-        ~otherwise=self.resolve_expr!(otherwise, env),
+        cond=self.resolve_expr!(cond, env),
+        then=self.resolve_expr!(then, env),
+        otherwise=self.resolve_expr!(otherwise, env),
         ~ty,
       )
     }
@@ -144,7 +144,7 @@ fn resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse
             new_args.push(self.resolve_expr!(arg, env))
           }
 
-          @parse.Call(~name=new_name, ~args=new_args, ~ty)
+          @parse.Call(name=new_name, args=new_args, ~ty)
         }
         None => raise UndeclaredFunction(name)
       }
@@ -158,9 +158,9 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
     Expression(expr) => Expression(self.resolve_expr!(expr, env))
     If(~cond, ~then, ~otherwise) => {
       If(
-        ~cond=self.resolve_expr!(cond, env),
-        ~then=self.resolve_stmt!(then, env),
-        ~otherwise=match otherwise {
+        cond=self.resolve_expr!(cond, env),
+        then=self.resolve_stmt!(then, env),
+        otherwise=match otherwise {
           Some(stmt) => Some(self.resolve_stmt!(stmt, env))
           None => None
         },
@@ -168,7 +168,7 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
     }
     Labeled(~label, ~stmt) => {
       match env.goto_labels.get(label) {
-        Some(unique_label) => Labeled(~label=unique_label, ~stmt=self.resolve_stmt!(stmt, env))
+        Some(unique_label) => Labeled(label=unique_label, stmt=self.resolve_stmt!(stmt, env))
         None => raise UndeclaredLabel(label)
       }
     }
@@ -187,7 +187,7 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
         Some(_) => raise NameResolutionError::Unreachable("break with label before resolution")
         None => {
           match env.stack.peek() {
-            Some(Loop(label) | Switch(label)) => Break(~label=Some(label))
+            Some(Loop(label) | Switch(label)) => Break(label=Some(label))
             None => raise BreakOutsideLoopOrSwitch
           }
         }
@@ -198,29 +198,29 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
         Some(_) => raise NameResolutionError::Unreachable("continue with label before resolution")
         None => {
           match env.stack.get_innermost_loop_label() {
-            Some(loop_label) => Continue(~label=Some(loop_label))
+            Some(loop_label) => Continue(label=Some(loop_label))
             None => raise ContinueOutsideLoop
           }
         }
       }
     }
-    While(~cond, ~body, ~label=_) => {
+    While(~cond, ~body, label=_) => {
       let loop_label = self.next_loop_label("while")
       env.push(Loop(loop_label))
       let cond = self.resolve_expr!(cond, env)
       let body = self.resolve_stmt!(body, env)
       env.pop()
-      While(~cond, ~body, ~label=Some(loop_label))
+      While(~cond, ~body, label=Some(loop_label))
     }
-    DoWhile(~body, ~cond, ~label=_) => {
+    DoWhile(~body, ~cond, label=_) => {
       let loop_label = self.next_loop_label("do_while")
       env.push(Loop(loop_label))
       let body = self.resolve_stmt!(body, env)
       let cond = self.resolve_expr!(cond, env)
       env.pop()
-      DoWhile(~body, ~cond, ~label=Some(loop_label))
+      DoWhile(~body, ~cond, label=Some(loop_label))
     }
-    For(~init, ~cond, ~post, ~body, ~label=_) => {
+    For(~init, ~cond, ~post, ~body, label=_) => {
       let for_env = env.child()
       let loop_label = self.next_loop_label("for")
       for_env.push(Loop(loop_label))
@@ -249,24 +249,24 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
       let body = self.resolve_stmt!(body, for_env)
       for_env.pop()
 
-      For(~init=new_init, ~cond=new_cond, ~post=new_post, ~body, ~label=Some(loop_label))
+      For(init=new_init, cond=new_cond, post=new_post, ~body, label=Some(loop_label))
     }
-    Switch(~expr, ~body, ~label=_, ~cases_count) => {
+    Switch(~expr, ~body, label=_, ~cases_count) => {
       let switch_env = env.child()
       let switch_label = self.next_switch_entry("switch")
       switch_env.push(Switch(switch_label))
       let new_expr = self.resolve_expr!(expr, switch_env)
       let new_body = self.resolve_stmt!(body, switch_env)
 
-      Switch(~expr=new_expr, ~body=new_body, ~label=Some(switch_label), ~cases_count)
+      Switch(expr=new_expr, body=new_body, label=Some(switch_label), ~cases_count)
     }
     Case(~expr, ~body) => {
       let new_expr = self.resolve_expr!(expr, env)
       let new_body = self.resolve_stmt!(body, env)
-      Case(~expr=new_expr, ~body=new_body)
+      Case(expr=new_expr, body=new_body)
     }
     Default(~body) => {
-      Default(~body=self.resolve_stmt!(body, env))
+      Default(body=self.resolve_stmt!(body, env))
     }
     Null => Null
   }
@@ -352,7 +352,7 @@ fn resolve_block(self: NameResolutionPass, block: Array[@parse.BlockItem], env: 
   for item in block {
     match item {
       Decl(decl) => {
-        let new_decl = self.resolve_decl!(decl, env, ~scope=BlockScope)
+        let new_decl = self.resolve_decl!(decl, env, scope=BlockScope)
         new_block.push(@parse.BlockItem::Decl(new_decl))
       }
       Stmt(stmt) => {
@@ -378,7 +378,7 @@ fn collect_stmt_labels(self: NameResolutionPass, stmt: @parse.Stmt, labels: Map[
   match stmt {
     Return(_) => ()
     Expression(_) => ()
-    If(~cond=_, ~then, ~otherwise) => {
+    If(cond=_, ~then, ~otherwise) => {
       self.collect_stmt_labels!(then, labels)
       match otherwise {
         Some(stmt) => self.collect_stmt_labels!(stmt, labels)
@@ -399,19 +399,19 @@ fn collect_stmt_labels(self: NameResolutionPass, stmt: @parse.Stmt, labels: Map[
     }
     Break(_) => ()
     Continue(_) => ()
-    While(~cond=_, ~body, ~label=_) => {
+    While(cond=_, ~body, label=_) => {
       self.collect_stmt_labels!(body, labels)
     }
-    DoWhile(~body, ~cond=_, ~label=_) => {
+    DoWhile(~body, cond=_, label=_) => {
       self.collect_stmt_labels!(body, labels)
     }
-    For(~init=_, ~cond=_, ~post=_, ~body, ~label=_) => {
+    For(init=_, cond=_, post=_, ~body, label=_) => {
       self.collect_stmt_labels!(body, labels)
     }
-    Switch(~expr=_, ~body, ~label=_, ~cases_count=_) => {
+    Switch(expr=_, ~body, label=_, cases_count=_) => {
       self.collect_stmt_labels!(body, labels)
     }
-    Case(~expr=_, ~body) => {
+    Case(expr=_, ~body) => {
       self.collect_stmt_labels!(body, labels)
     }
     Default(~body) => {
@@ -466,7 +466,7 @@ pub fn resolved(self: NameResolutionPass, program: @parse.Program) -> @parse.Pro
   let env = Env::new()
 
   for decl in program.decls {
-    let new_decl = self.resolve_decl!(decl, env, ~scope=FileScope)
+    let new_decl = self.resolve_decl!(decl, env, scope=FileScope)
     decls.push(new_decl)
   }
 

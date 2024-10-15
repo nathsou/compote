@@ -34,7 +34,7 @@ pub impl Show for Type with output(self, logger: Logger) {
   logger.write_string(match self {
     Int => "int"
     Long => "long"
-    FunType(~params, ~ret) => "fun(" + params.map(Show::to_string).join(", ") + ") -> " + Show::to_string(ret)
+    FunType(~params, ~ret) => "fun(" + String::concat(params.map(Show::to_string), separator=", ") + ") -> " + Show::to_string(ret)
   })
 }
 
@@ -105,20 +105,20 @@ pub impl Show for Constant with output(self, logger: Logger) {
 
 pub fn show_expr(expr: Expr) -> String {
   match expr {
-    Constant(~const=n, ~ty=_) => Show::to_string(n)
-    Variable(~name, ~ty=_) => name
-    Cast(~target_ty, ~expr, ~ty=_) => "((" + Show::to_string(target_ty) + ")" + show_expr(expr) + ")"
-    Unary(~op, ~expr, ~ty=_) => {
+    Constant(const=n, ty=_) => Show::to_string(n)
+    Variable(~name, ty=_) => name
+    Cast(~target_ty, ~expr, ty=_) => "((" + Show::to_string(target_ty) + ")" + show_expr(expr) + ")"
+    Unary(~op, ~expr, ty=_) => {
       match op {
-        Inc(~is_prefix=false) => "(" + show_expr(expr) + ")++"
-        Dec(~is_prefix=true) => "(" + show_expr(expr)
+        Inc(is_prefix=false) => "(" + show_expr(expr) + ")++"
+        Dec(is_prefix=true) => "(" + show_expr(expr)
         _ => Show::to_string(op) + "(" + show_expr(expr) + ")"
       }
     }
-    Binary(~op, ~lhs, ~rhs, ~ty=_) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
-    Assignment(~op, ~lhs, ~rhs, ~ty=_) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
-    Conditional(~cond, ~then, ~otherwise, ~ty=_) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
-    Call(~name, ~args, ~ty=_) => name + "(" + args.map(show_expr).join(", ") + ")"
+    Binary(~op, ~lhs, ~rhs, ty=_) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
+    Assignment(~op, ~lhs, ~rhs, ty=_) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
+    Conditional(~cond, ~then, ~otherwise, ty=_) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
+    Call(~name, ~args, ty=_) => name + "(" + args.map(show_expr).join(", ") + ")"
   }
 }
 
@@ -217,16 +217,16 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
         }
       }
     }
-    While(~cond, ~body, ~label=_) => {
+    While(~cond, ~body, label=_) => {
       self.emit("while (" + show_expr(cond) + ") ")
       self.show_stmt(body)
     }
-    DoWhile(~body, ~cond, ~label=_) => {
+    DoWhile(~body, ~cond, label=_) => {
       self.emit("do ")
       self.show_stmt(body)
       self.emit("while (" + show_expr(cond) + ");")
     }
-    For(~init, ~cond, ~post, ~body, ~label=_) => {
+    For(~init, ~cond, ~post, ~body, label=_) => {
       self.emit("for (")
 
       match init {
@@ -260,7 +260,7 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
       self.write_string(") ")
       self.show_stmt(body)
     }
-    Switch(~expr, ~body, ~label=_, ~cases_count=_) => {
+    Switch(~expr, ~body, label=_, cases_count=_) => {
       self.emit("switch (" + show_expr(expr) + ")")
       self.show_stmt(body)
     }
@@ -292,11 +292,11 @@ pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
     Show::to_string(param.ty) + " " + param.name
   }).join(", ")
 
-  self.emit(storage_class + Show::to_string(func.return_ty) + " " + func.name + "(" + params + ")" + if func.body.is_empty() {
+  self.emit(storage_class + Show::to_string(func.return_ty) + " " + func.name + "(" + params + ")" + (if func.body.is_empty() {
     ";"
   } else {
     " {"
-  })
+  }))
 
   match func.body {
     Some(body) => {

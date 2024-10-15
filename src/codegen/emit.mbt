@@ -173,7 +173,7 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
     Unary(~op, ~dst, ~ty) => {
       self.emit("\{op.asm()}\{ty.suffix()} \{dst.asm!(ty, self.os)}")
     }
-    Binary(~op=Shl | Sal as op, ~src, ~dst, ~ty) => {
+    Binary(op=Shl | Sal as op, ~src, ~dst, ~ty) => {
       self.emit("\{op.asm()}\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
     }
     Binary(~op, ~src, ~dst, ~ty) => {

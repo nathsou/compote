@@ -35,7 +35,7 @@ fn expect(self: Parser, expected: Token) -> Unit!ParserError {
   if token == expected {
     self.advance()
   } else {
-    raise UnexpectedToken(~expected, ~received=token)
+    raise UnexpectedToken(~expected, received=token)
   }
 }
 
@@ -100,17 +100,17 @@ fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
           match op {
             Assignment(assignment_op) => { // right-associative
               let rhs = self.precedence_climbing!(precedence)
-              lhs = Assignment(~op=assignment_op, ~lhs, ~rhs, ~ty=None)
+              lhs = Assignment(op=assignment_op, ~lhs, ~rhs, ty=None)
             }
             Ternary => {
               let then = self.parse_expr!()
               self.expect!(Colon)
               let otherwise = self.precedence_climbing!(precedence)
-              lhs = Conditional(~cond=lhs, ~then, ~otherwise, ~ty=None)
+              lhs = Conditional(cond=lhs, ~then, ~otherwise, ty=None)
             }
             _ => { // left-associative
               let rhs = self.precedence_climbing!(precedence + 1)
-              lhs = Binary(~op=op, ~lhs, ~rhs, ~ty=None)
+              lhs = Binary(op=op, ~lhs, ~rhs, ty=None)
             }
           }
         } else {
@@ -130,20 +130,20 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
   match token {
     IntLiteral(n) => {
       self.advance()
-      Constant(~const=IntConst(n), ~ty=None)
+      Constant(const=IntConst(n), ty=None)
     }
     LongLiteral(n) => {
       self.advance()
-      Constant(~const=LongConst(n), ~ty=None)
+      Constant(const=LongConst(n), ty=None)
     }
     Identifier(name) => {
       self.advance()
 
       if self.matches(Lparen) {
         let args = self.parse_argument_list!()
-        Call(~name, ~args, ~ty=None)
+        Call(~name, ~args, ty=None)
       } else {
-        Variable(~name, ~ty=None)
+        Variable(~name, ty=None)
       }
     }
     Lparen => {
@@ -167,7 +167,7 @@ fn parse_cast_expr(self: Parser) -> Expr!ParserError {
   self.expect!(Rparen)
   let expr = self.parse_factor!()
 
-  Cast(~target_ty, ~expr, ~ty=None)
+  Cast(~target_ty, ~expr, ty=None)
 }
 
 fn parse_argument_list(self: Parser) -> Array[Expr]!ParserError {
@@ -197,11 +197,11 @@ fn parse_postfix_expr(self: Parser) -> Expr!ParserError {
     match self.peek() {
       PlusPlus => {
         self.advance()
-        lhs = Unary(~op=Inc(~is_prefix=false), ~expr=lhs, ~ty=None)
+        lhs = Unary(op=Inc(is_prefix=false), expr=lhs, ty=None)
       }
       MinusMinus => {
         self.advance()
-        lhs = Unary(~op=Dec(~is_prefix=false), ~expr=lhs, ~ty=None)
+        lhs = Unary(op=Dec(is_prefix=false), expr=lhs, ty=None)
       }
       _ => break
     }
@@ -217,27 +217,27 @@ fn parse_factor(self: Parser) -> Expr!ParserError {
     Minus => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Neg, ~expr, ~ty=None)
+      Unary(op=Neg, ~expr, ty=None)
     }
     Tilde => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Complement, ~expr, ~ty=None)
+      Unary(op=Complement, ~expr, ty=None)
     }
     Bang => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Not, ~expr, ~ty=None)
+      Unary(op=Not, ~expr, ty=None)
     }
     PlusPlus => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Inc(~is_prefix=true), ~expr, ~ty=None)
+      Unary(op=Inc(is_prefix=true), ~expr, ty=None)
     }
     MinusMinus => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Dec(~is_prefix=true), ~expr, ~ty=None)
+      Unary(op=Dec(is_prefix=true), ~expr, ty=None)
     }
     _ => self.parse_postfix_expr!()
   }
@@ -285,12 +285,12 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
     Break => {
       self.advance()
       self.expect!(Semicolon)
-      Break(~label=None)
+      Break(label=None)
     }
     Continue => {
       self.advance()
       self.expect!(Semicolon)
-      Continue(~label=None)
+      Continue(label=None)
     }
     While => self.parse_while_stmt!()
     Do => self.parse_do_while_stmt!()
@@ -302,7 +302,7 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
       if self.lookahead(1) == Colon {
         self.index += 2
         let stmt = self.parse_stmt!()
-        Labeled(~label=ident, ~stmt)
+        Labeled(label=ident, ~stmt)
       } else {
         self.parse_expr_stmt!()
       }
@@ -338,7 +338,7 @@ fn parse_while_stmt(self: Parser) -> Stmt!ParserError {
   self.expect!(Rparen)
   let body = self.parse_stmt!()
 
-  While(~cond, ~body, ~label=None)
+  While(~cond, ~body, label=None)
 }
 
 fn parse_do_while_stmt(self: Parser) -> Stmt!ParserError {
@@ -350,7 +350,7 @@ fn parse_do_while_stmt(self: Parser) -> Stmt!ParserError {
   self.expect!(Rparen)
   self.expect!(Semicolon)
 
-  DoWhile(~body, ~cond, ~label=None)
+  DoWhile(~body, ~cond, label=None)
 }
 
 fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
@@ -386,7 +386,7 @@ fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
 
   let body = self.parse_stmt!()
 
-  For(~init, ~cond, ~post, ~body, ~label=None)
+  For(~init, ~cond, ~post, ~body, label=None)
 }
 
 fn parse_case_stmt(self: Parser) -> Stmt!ParserError {
@@ -413,7 +413,7 @@ fn parse_switch_stmt(self: Parser) -> Stmt!ParserError {
   self.expect!(Rparen)
   let body = self.parse_stmt!()
 
-  Switch(~expr, ~body, ~label=None, ~cases_count=0)
+  Switch(~expr, ~body, label=None, cases_count=0)
 }
 
 fn parse_block_item(self: Parser) -> BlockItem!ParserError {

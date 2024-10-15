@@ -125,19 +125,19 @@ pub fn precedence(self: BinaryOp) -> Int {
 }
 
 pub fn to_type(self: FunctionDecl) -> Type {
-  FunType(~params=self.params.map(fn(param) { param.ty }), ~ret=self.return_ty)
+  FunType(params=self.params.map(fn(param) { param.ty }), ret=self.return_ty)
 }
 
 pub fn ty(self: Expr) -> Type {
   (match self {
-    Constant(~const=_, ~ty) => ty
-    Variable(~name=_, ~ty) => ty
-    Cast(~target_ty=_, ~expr=_, ~ty) => ty
-    Unary(~op=_, ~expr=_, ~ty) => ty
-    Binary(~op=_, ~lhs=_, ~rhs=_, ~ty) => ty
-    Assignment(~op=_, ~lhs=_, ~rhs=_, ~ty) => ty
-    Conditional(~cond=_, ~then=_, ~otherwise=_, ~ty) => ty
-    Call(~name=_, ~args=_, ~ty) => ty
+    Constant(const=_, ~ty) => ty
+    Variable(name=_, ~ty) => ty
+    Cast(target_ty=_, expr=_, ~ty) => ty
+    Unary(op=_, expr=_, ~ty) => ty
+    Binary(op=_, lhs=_, rhs=_, ~ty) => ty
+    Assignment(op=_, lhs=_, rhs=_, ~ty) => ty
+    Conditional(cond=_, then=_, otherwise=_, ~ty) => ty
+    Call(name=_, args=_, ~ty) => ty
   }).unwrap()
 }
 

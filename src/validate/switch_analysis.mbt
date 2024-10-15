@@ -31,7 +31,7 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt!SwitchRes
 
       let new_body = analyze_stmt!(body, Some(ctx))
 
-      Default(~body=new_body)
+      Default(body=new_body)
     }
     Case(~expr, ~body) => {
       let ctx = match ctx {
@@ -40,7 +40,7 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt!SwitchRes
       }
 
       let const = match expr {
-        Constant(~const, ~ty=_) => const
+        Constant(~const, ty=_) => const
         _ => raise CaseExprMustBeConstant
       }
 
@@ -57,9 +57,9 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt!SwitchRes
 
       let new_body = analyze_stmt!(body, Some(ctx))
 
-      Case(~expr, ~body=new_body)
+      Case(~expr, body=new_body)
     }
-    Switch(~expr, ~body, ~label, ~cases_count=_) => {
+    Switch(~expr, ~body, ~label, cases_count=_) => {
       let label = match label {
         Some(label) => label
         None => raise UnresolvedSwitchLabel
@@ -73,9 +73,9 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt!SwitchRes
       }
 
       let new_body = analyze_stmt!(body, Some(new_ctx))
-      let cases_count = new_ctx.cases.size() + if new_ctx.has_default { 1 } else { 0 }
+      let cases_count = new_ctx.cases.size() + (if new_ctx.has_default { 1 } else { 0 })
 
-      Switch(~expr, ~body=new_body, ~label=Some(label), ~cases_count)
+      Switch(~expr, body=new_body, label=Some(label), ~cases_count)
     }
     If(~cond, ~then, ~otherwise) => {
       let new_then = analyze_stmt!(then, ctx)
@@ -84,26 +84,26 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt!SwitchRes
         None => None
       }
 
-      If(~cond, ~then=new_then, ~otherwise=new_otherwise)
+      If(~cond, then=new_then, otherwise=new_otherwise)
     }
     Compound(items) => {
       Compound(analyze_block!(items, ctx))
     }
     While(~cond, ~body, ~label) => {
       let new_body = analyze_stmt!(body, ctx)
-      While(~cond, ~body=new_body, ~label)
+      While(~cond, body=new_body, ~label)
     }
     DoWhile(~body, ~cond, ~label) => {
       let new_body = analyze_stmt!(body, ctx)
-      DoWhile(~body=new_body, ~cond, ~label)
+      DoWhile(body=new_body, ~cond, ~label)
     }
     For(~init, ~cond, ~post, ~body, ~label) => {
       let new_body = analyze_stmt!(body, ctx)
-      For(~init, ~cond, ~post, ~body=new_body, ~label)
+      For(~init, ~cond, ~post, body=new_body, ~label)
     }
     Labeled(~label, ~stmt) => {
       let new_stmt = analyze_stmt!(stmt, ctx)
-      Labeled(~label, ~stmt=new_stmt)
+      Labeled(~label, stmt=new_stmt)
     }
     // Statements not composed of other statements
     Return(_) | Null | Expression(_) | Break(_) | Continue(_) | Goto(_) => stmt

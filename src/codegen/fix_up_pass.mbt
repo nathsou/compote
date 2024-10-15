@@ -16,50 +16,50 @@ fn is_larger_than_u32(n: Int64) -> Bool {
 fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
   match inst {
      // some instructions with stack addresses as both operands are invalid
-    Mov(~src=Stack(_) | Data(_) as src, ~dst=Stack(_) | Data(_) as dst, ~ty) => [
-      Mov(~src, ~dst=Reg(R10), ~ty),
-      Mov(~src=Reg(R10), ~dst, ~ty),
+    Mov(src=Stack(_) | Data(_) as src, dst=Stack(_) | Data(_) as dst, ~ty) => [
+      Mov(~src, dst=Reg(R10), ~ty),
+      Mov(src=Reg(R10), ~dst, ~ty),
     ]
     // Mov cannot move a large immediate to a memory location
-    Mov(~src=Imm(n) as src, ~dst=Stack(_) | Data(_) as dst, ~ty=QuadWord) => {
+    Mov(src=Imm(n) as src, dst=Stack(_) | Data(_) as dst, ty=QuadWord) => {
       if not(fits_in_i32(n)) {
         [
-          Mov(~src, ~dst=Reg(R10), ~ty=QuadWord),
-          Mov(~src=Reg(R10), ~dst, ~ty=QuadWord),
+          Mov(~src, dst=Reg(R10), ty=QuadWord),
+          Mov(src=Reg(R10), ~dst, ty=QuadWord),
         ]
       } else {
         [inst]
       }
     }
     // Prevent GCC warning when truncating using movl
-    Mov(~src=Imm(n), ~dst, ~ty=LongWord) => {
+    Mov(src=Imm(n), ~dst, ty=LongWord) => {
       if is_larger_than_u32(n) {
-        [Mov(~src=Imm(n & 0xffffffff), ~dst, ~ty=LongWord)]
+        [Mov(src=Imm(n & 0xffffffff), ~dst, ty=LongWord)]
       } else {
         [inst]
       }
     }
     // Movsx can't handle an immediate source or a memory destination
-    Movsx(~src=Imm(_) as src, ~dst=Stack(_) | Data(_) as dst) => {
+    Movsx(src=Imm(_) as src, dst=Stack(_) | Data(_) as dst) => {
       [
-        Mov(~src, ~dst=Reg(R10), ~ty=LongWord),
-        Movsx(~src=Reg(R10), ~dst=Reg(R11)),
-        Mov(~src=Reg(R11), ~dst, ~ty=QuadWord),
+        Mov(~src, dst=Reg(R10), ty=LongWord),
+        Movsx(src=Reg(R10), dst=Reg(R11)),
+        Mov(src=Reg(R11), ~dst, ty=QuadWord),
       ]
     }
-    Movsx(~src=Imm(_) as src, ~dst) => {
+    Movsx(src=Imm(_) as src, ~dst) => {
       [
-        Mov(~src, ~dst=Reg(R10), ~ty=LongWord),
-        Movsx(~src=Reg(R10), ~dst),
+        Mov(~src, dst=Reg(R10), ty=LongWord),
+        Movsx(src=Reg(R10), ~dst),
       ]
     }
-    Movsx(~src, ~dst=Stack(_) | Data(_) as dst) => {
+    Movsx(~src, dst=Stack(_) | Data(_) as dst) => {
       [
-        Movsx(~src, ~dst=Reg(R11)),
-        Mov(~src=Reg(R11), ~dst, ~ty=QuadWord),
+        Movsx(~src, dst=Reg(R11)),
+        Mov(src=Reg(R11), ~dst, ty=QuadWord),
       ]
     }
-    Binary(~op=Mul, ~src, ~dst, ~ty) => {
+    Binary(op=Mul, ~src, ~dst, ~ty) => {
       let is_large_src_imm = match src {
         Imm(n) => not(fits_in_i32(n))
         _ => false
@@ -70,23 +70,23 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
         (QuadWord, true, Stack(_) | Data(_)) => {
           // rewrite both operands
           [
-            Mov(~src, ~dst=Reg(R10), ~ty=QuadWord),
-            Mov(~src=dst, ~dst=Reg(R11), ~ty=QuadWord),
-            Binary(~op=Mul, ~src=Reg(R10), ~dst=Reg(R11), ~ty=QuadWord),
-            Mov(~src=Reg(R11), ~dst, ~ty=QuadWord),
+            Mov(~src, dst=Reg(R10), ty=QuadWord),
+            Mov(src=dst, dst=Reg(R11), ty=QuadWord),
+            Binary(op=Mul, src=Reg(R10), dst=Reg(R11), ty=QuadWord),
+            Mov(src=Reg(R11), ~dst, ty=QuadWord),
           ]
         }
         (QuadWord, true, _) => {
           [
-            Mov(~src, ~dst=Reg(R10), ~ty=QuadWord),
-            Binary(~op=Mul, ~src=Reg(R10), ~dst, ~ty=QuadWord),
+            Mov(~src, dst=Reg(R10), ty=QuadWord),
+            Binary(op=Mul, src=Reg(R10), ~dst, ty=QuadWord),
           ]
         }
         (_, _, Stack(_) | Data(_)) => {
           [
-            Mov(~src=dst, ~dst=Reg(R11), ~ty),
-            Binary(~op=Mul, ~src, ~dst=Reg(R11), ~ty),
-            Mov(~src=Reg(R11), ~dst, ~ty)
+            Mov(src=dst, dst=Reg(R11), ~ty),
+            Binary(op=Mul, ~src, dst=Reg(R11), ~ty),
+            Mov(src=Reg(R11), ~dst, ~ty)
           ]
         }
         _ => [inst]
@@ -102,31 +102,31 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
         // can't take large immediates as source operands
         (QuadWord, true, Add | Sub | And | Or | Xor, _, _) => {
           [
-            Mov(~src, ~dst=Reg(R10), ~ty=QuadWord),
-            Binary(~op, ~src=Reg(R10), ~dst, ~ty=QuadWord),
+            Mov(~src, dst=Reg(R10), ty=QuadWord),
+            Binary(~op, src=Reg(R10), ~dst, ty=QuadWord),
           ]
         }
         // can't use memory addresses for both operands
         (_, _, Add | Sub | And | Or | Xor, Stack(_) | Data(_), Stack(_) | Data(_)) => {
           [
-            Mov(~src, ~dst=Reg(R10), ~ty),
-            Binary(~op, ~src=Reg(R10), ~dst, ~ty),
+            Mov(~src, dst=Reg(R10), ~ty),
+            Binary(~op, src=Reg(R10), ~dst, ~ty),
           ]
         }
         // if the shift amount is an immediate, it can be used directly
         (_, _, Shl | Sal, Imm(_), _) => [inst]
         // otherwise, the shift amount must be stored in the cl register
         (_, _, Shl | Sal, _, _) => [
-          Mov(~src, ~dst=Reg(CX), ~ty),
-          Binary(~op, ~src=RegSize(CX, Byte), ~dst, ~ty),
+          Mov(~src, dst=Reg(CX), ~ty),
+          Binary(~op, src=RegSize(CX, Byte), ~dst, ~ty),
         ]
         _ => [inst]
       }
     }
     // idiv, cmp instructions do not support immediate operands
-    IDiv(~src=Imm(n), ~ty) => [
-      Mov(~src=Imm(n), ~dst=Reg(R10), ~ty),
-      IDiv(~src=Reg(R10), ~ty),
+    IDiv(src=Imm(n), ~ty) => [
+      Mov(src=Imm(n), dst=Reg(R10), ~ty),
+      IDiv(src=Reg(R10), ~ty),
     ]
     Cmp(~src, ~dst, ~ty) => {
       let is_large_src_imm = match src {
@@ -139,28 +139,28 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
         // both operands can't be in memory
         (_, _, Stack(_) | Data(_), Stack(_) | Data(_)) => {
           [
-            Mov(~src, ~dst=Reg(R10), ~ty),
-            Cmp(~src=Reg(R10), ~dst, ~ty),
+            Mov(~src, dst=Reg(R10), ~ty),
+            Cmp(src=Reg(R10), ~dst, ~ty),
           ]
         }
         // first operand can't be a large immediate, second one can't be an immediate at all
         (QuadWord, true, _, Imm(_)) => {
           [
-            Mov(~src, ~dst=Reg(R10), ~ty=QuadWord),
-            Mov(~src=dst, ~dst=Reg(R11), ~ty=QuadWord),
-            Cmp(~src=Reg(R10), ~dst=Reg(R11), ~ty=QuadWord),
+            Mov(~src, dst=Reg(R10), ty=QuadWord),
+            Mov(src=dst, dst=Reg(R11), ty=QuadWord),
+            Cmp(src=Reg(R10), dst=Reg(R11), ty=QuadWord),
           ]
         }
         (QuadWord, true, _, _) => {
           [
-            Mov(~src, ~dst=Reg(R10), ~ty=QuadWord),
-            Cmp(~src=Reg(R10), ~dst, ~ty=QuadWord),
+            Mov(~src, dst=Reg(R10), ty=QuadWord),
+            Cmp(src=Reg(R10), ~dst, ty=QuadWord),
           ]
         }
         (_, _, _, Imm(_)) => {
           [
-            Mov(~src=dst, ~dst=Reg(R11), ~ty),
-            Cmp(~src, ~dst=Reg(R11), ~ty),
+            Mov(src=dst, dst=Reg(R11), ~ty),
+            Cmp(~src, dst=Reg(R11), ~ty),
           ]
         }
         _ => [inst]
@@ -169,7 +169,7 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
     Push(Imm(n) as src) => {
       if not(fits_in_i32(n)) {
         [
-          Mov(~src, ~dst=Reg(R10), ~ty=QuadWord),
+          Mov(~src, dst=Reg(R10), ty=QuadWord),
           Push(Reg(R10)),
         ]
       } else {
