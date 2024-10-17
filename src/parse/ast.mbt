@@ -16,7 +16,7 @@ pub enum Constant {
 
 pub enum StorageClass {
   Static; Extern
-} derive(Eq)
+} derive(Eq, Hash)
 
 pub enum Expr {
   Constant(~const: Constant, ~ty: Type?)

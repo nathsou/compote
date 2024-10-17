@@ -9,7 +9,7 @@ pub type! ParserError {
   ExpectedExpr(Token)
   EmptyParamListNotSupportedUseVoidInstead
   TrailingComma
-  InvalidTypeSpecifier
+  InvalidTypeSpecifier(Array[Specifier])
   InvalidStorageClassSpecifier
 } derive(Show)
 
@@ -72,18 +72,54 @@ fn parse_identifier(self: Parser) -> String!ParserError {
   }
 }
 
-fn parse_type_specifiers(specifiers: Array[Specifier]) -> Type!ParserError {
-  match specifiers {
-    [TypeSpecifier(Int)] => Type::Int
-    [TypeSpecifier(Long)] |
-    [TypeSpecifier(Int), TypeSpecifier(Long)] |
-    [TypeSpecifier(Long), TypeSpecifier(Int)] => Type::Long
-    _ => raise InvalidTypeSpecifier
+fn has_duplicate_specifiers(specifiers: Array[Specifier]) -> Bool {
+  let specifiers_counts = {}
+
+  for specifier in specifiers {
+    let count = specifiers_counts.get_or_default(specifier, 0);
+    specifiers_counts[specifier] = count + 1
   }
+
+  specifiers_counts.values().any(fn(count) { count > 1 })
 }
 
-fn parse_type(self: Parser) -> Type!ParserError {
-  parse_type_specifiers!(self.parse_specifiers())
+fn parse_type_specifiers(specifiers: Array[Specifier], ~allow_storage_classes: Bool) -> Type!ParserError {
+  if
+    specifiers.is_empty() ||
+    (specifiers.contains(TypeSpecifier(Unsigned)) && specifiers.contains(TypeSpecifier(Signed)) ||
+    has_duplicate_specifiers(specifiers)
+  ) {
+    raise InvalidTypeSpecifier(specifiers)
+  }
+
+  let contains_illegal_storage_class = not(allow_storage_classes) && specifiers.iter().any(fn(specifier) {
+    match specifier {
+      StorageClassSpecifier(_) => true
+      _ => false
+    }
+  })
+
+  if contains_illegal_storage_class {
+    raise InvalidTypeSpecifier(specifiers)
+  }
+
+  if specifiers.contains(TypeSpecifier(Unsigned)) && specifiers.contains(TypeSpecifier(Long)) {
+    return UnsignedLong
+  }
+
+  if specifiers.contains(TypeSpecifier(Unsigned)) {
+    return UnsignedInt
+  }
+
+  if specifiers.contains(TypeSpecifier(Long)) {
+    return Long
+  }
+
+  Int
+}
+
+fn parse_type(self: Parser, ~allow_storage_classes: Bool) -> Type!ParserError {
+  parse_type_specifiers!(self.parse_specifiers(), ~allow_storage_classes)
 }
 
 fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
@@ -146,6 +182,14 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
         Variable(~name, ty=None)
       }
     }
+    UIntLiteral(n) => {
+      self.advance()
+      Constant(const=UnsignedIntConst(n), ty=None)
+    }
+    ULongLiteral(n) => {
+      self.advance()
+      Constant(const=UnsignedLongConst(n), ty=None)
+    }
     Lparen => {
       self.advance()
 
@@ -163,7 +207,7 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
 
 fn parse_cast_expr(self: Parser) -> Expr!ParserError {
   let specifiers = self.parse_specifiers()
-  let target_ty = parse_type_specifiers!(specifiers)
+  let target_ty = parse_type_specifiers!(specifiers, allow_storage_classes=false)
   self.expect!(Rparen)
   let expr = self.parse_factor!()
 
@@ -424,10 +468,14 @@ fn parse_block_item(self: Parser) -> BlockItem!ParserError {
   }
 }
 
+enum TypeSpecifier {
+  Int; Long; Unsigned; Signed
+} derive(Eq, Hash, Show)
+
 enum Specifier {
-  TypeSpecifier(Type)
+  TypeSpecifier(TypeSpecifier)
   StorageClassSpecifier(StorageClass)
-}
+} derive(Eq, Hash, Show)
 
 fn parse_specifiers(self: Parser) -> Array[Specifier] {
   let specifiers = []
@@ -441,6 +489,14 @@ fn parse_specifiers(self: Parser) -> Array[Specifier] {
       Long => {
         self.advance()
         specifiers.push(TypeSpecifier(Long))
+      }
+      Unsigned => {
+        self.advance()
+        specifiers.push(TypeSpecifier(Unsigned))
+      }
+      Signed => {
+        self.advance()
+        specifiers.push(TypeSpecifier(Signed))
       }
       Extern => {
         self.advance()
@@ -472,7 +528,7 @@ fn parse_type_and_storage_class(specifiers: Array[Specifier]) -> (Type, StorageC
     raise InvalidStorageClassSpecifier
   }
 
-  let ty = parse_type_specifiers!(type_specifiers)
+  let ty = parse_type_specifiers!(type_specifiers, allow_storage_classes=true)
   let storage_class = if storage_classes.length() == 1 {
     Some(storage_classes[0])
   } else {
@@ -514,7 +570,7 @@ fn parse_param_list(self: Parser) -> Array[FunctionParam]!ParserError {
     let params: Array[FunctionParam] = []
     
     while true {
-      let ty = self.parse_type!()
+      let ty = self.parse_type!(allow_storage_classes=false)
       let name = self.parse_identifier!()
       params.push({ ty, name })
 
