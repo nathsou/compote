@@ -141,13 +141,39 @@ pub fn ty(self: Expr) -> Type {
   }).unwrap()
 }
 
+pub fn byte_size(self: Type) -> UInt {
+  match self {
+    Int | UnsignedInt => 4
+    Long | UnsignedLong => 8
+    _ => 0
+  }
+}
+
+pub fn is_signed(self: Type) -> Bool {
+  match self {
+    Int | Long => true
+    _ => false
+  }
+}
 
 pub fn fit_const_to_type(const: Constant, ty: Type) -> Constant! {
   match (const, ty) {
     (IntConst(n), Int) => IntConst(n)
     (IntConst(n), Long) => LongConst(n.to_int64())
+    (IntConst(n), UnsignedInt) => UnsignedIntConst(n.reinterpret_as_uint())
+    (IntConst(n), UnsignedLong) => UnsignedLongConst(n.to_uint64())
     (LongConst(n), Int) => IntConst(n.to_int())
     (LongConst(n), Long) => LongConst(n)
-    _ => raise Failure("Invalid constant type conversion")
+    (LongConst(n), UnsignedInt) => UnsignedIntConst(n.reinterpret_as_uint64().to_uint())
+    (LongConst(n), UnsignedLong) => UnsignedLongConst(n.reinterpret_as_uint64())
+    (UnsignedIntConst(n), UnsignedInt) => UnsignedIntConst(n)
+    (UnsignedIntConst(n), UnsignedLong) => UnsignedLongConst(n.to_uint64())
+    (UnsignedIntConst(n), Int) => IntConst(n.reinterpret_as_int())
+    (UnsignedIntConst(n), Long) => LongConst(n.to_int64())
+    (UnsignedLongConst(n), UnsignedInt) => UnsignedIntConst(n.to_uint())
+    (UnsignedLongConst(n), UnsignedLong) => UnsignedLongConst(n)
+    (UnsignedLongConst(n), Long) => LongConst(n.to_int64())
+    (UnsignedLongConst(n), Int) => IntConst(n.to_int())
+    (_, FunType(_)) => raise Failure("Invalid constant type conversion")
   }
 }

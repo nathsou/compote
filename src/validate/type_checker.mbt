@@ -1,4 +1,8 @@
 
+pub enum StaticInit {
+  IntInit(Int); LongInit(Int64); UIntInit(UInt); ULongInit(UInt64)
+} derive(Show, Eq)
+
 pub enum InitialValue {
   Tentative; Initial(StaticInit); NoInitializer
 }
@@ -8,18 +12,30 @@ fn convert_to(const: @parse.Constant, ty: @parse.Type) -> StaticInit!TypeChecker
     Int => match const {
       IntConst(n) => IntInit(n)
       LongConst(n) => IntInit(n.to_int())
+      UnsignedIntConst(n) => UIntInit(n)
+      UnsignedLongConst(n) => UIntInit(n.to_uint())
     }
     Long => match const {
       IntConst(n) => LongInit(n.to_int64())
       LongConst(n) => LongInit(n)
+      UnsignedIntConst(n) => LongInit(n.to_int64())
+      UnsignedLongConst(n) => LongInit(n.to_int64())
+    }
+    UnsignedInt => match const {
+      IntConst(n) => UIntInit(n.reinterpret_as_uint())
+      LongConst(n) => UIntInit(n.reinterpret_as_uint64().to_uint())
+      UnsignedIntConst(n) => UIntInit(n)
+      UnsignedLongConst(n) => UIntInit(n.to_uint())
+    }
+    UnsignedLong => match const {
+      IntConst(n) => ULongInit(n.to_uint64())
+      LongConst(n) => ULongInit(n.reinterpret_as_uint64())
+      UnsignedIntConst(n) => ULongInit(n.to_uint64())
+      UnsignedLongConst(n) => ULongInit(n)
     }
     _ => raise TypeCheckerError::Unreachable("non-integer static variable initializer")
   }
 }
-
-pub enum StaticInit {
-  IntInit(Int); LongInit(Int64)
-} derive(Show, Eq)
 
 pub enum IdentifierAttributes {
   FunAttr(~defined: Bool, ~global: Bool)
@@ -256,14 +272,23 @@ pub fn typed_block(self: TypeChecker, block: Array[@parse.BlockItem]) -> Array[@
   typed_block
 }
 
-fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type!TypeCheckerError {
+fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type {
   if ty1 == ty2 {
     return ty1
   }
 
-  match (ty1, ty2) {
-    (Int, Long) | (Long, Int) => Long
-    _ => raise TypeCheckerError::Unreachable("no common type")
+  if ty1.byte_size() == ty2.byte_size() {
+    if ty1.is_signed() {
+      return ty2
+    } else {
+      return ty1
+    }
+  }
+  
+  if ty1.byte_size() > ty2.byte_size() {
+    return ty1
+  } else {
+    return ty2
   }
 }
 
@@ -280,6 +305,8 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
     Constant(~const, ty=_) => match const {
       IntConst(_) => Constant(~const, ty=Some(Int))
       LongConst(_) => Constant(~const, ty=Some(Long))
+      UnsignedIntConst(_) => Constant(~const, ty=Some(UnsignedInt))
+      UnsignedLongConst(_) => Constant(~const, ty=Some(UnsignedLong))
     }
     Variable(~name, ty=_) => {
       match self.symbols[name] {
@@ -309,7 +336,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
         Shl | Shr => Binary(~op, ~lhs, ~rhs, ty=Some(lhs.ty()))
         LogicalAnd | LogicalOr => Binary(~op, ~lhs, ~rhs, ty=Some(Int))
         _ => {
-          let common_ty = get_common_type!(lhs.ty(), rhs.ty())
+          let common_ty = get_common_type(lhs.ty(), rhs.ty())
           let lhs = cast(lhs, common_ty)
           let rhs = cast(rhs, common_ty)
 
@@ -334,7 +361,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
           Assignment(~op, ~lhs, ~rhs, ty=Some(lhs.ty()))
         }
         _ => {
-          let common_ty = get_common_type!(lhs.ty(), rhs.ty())
+          let common_ty = get_common_type(lhs.ty(), rhs.ty())
           Assignment(~op, ~lhs, rhs=cast(rhs, common_ty), ty=Some(common_ty))
         }
       }
@@ -343,7 +370,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
       let cond = self.typed_expr!(cond)
       let then = self.typed_expr!(then)
       let otherwise = self.typed_expr!(otherwise)
-      let common_ty = get_common_type!(then.ty(), otherwise.ty())
+      let common_ty = get_common_type(then.ty(), otherwise.ty())
       let then = cast(then, common_ty)
       let otherwise = cast(otherwise, common_ty)
       Conditional(~cond, ~then, ~otherwise, ty=Some(common_ty))
@@ -361,7 +388,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
             let arg = self.typed_expr!(args[i])
             let param_ty = params[i]
             let arg_ty = arg.ty()
-            let common_ty = get_common_type!(param_ty, arg_ty)
+            let common_ty = get_common_type(param_ty, arg_ty)
             converted_args.push(cast(arg, common_ty))
           }
 
