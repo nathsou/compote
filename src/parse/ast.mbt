@@ -145,14 +145,14 @@ pub fn byte_size(self: Type) -> UInt {
   match self {
     Int | UnsignedInt => 4
     Long | UnsignedLong => 8
-    _ => 0
+    FunType(_) => 0
   }
 }
 
 pub fn is_signed(self: Type) -> Bool {
   match self {
     Int | Long => true
-    _ => false
+    UnsignedInt | UnsignedLong | FunType(_) => false
   }
 }
 

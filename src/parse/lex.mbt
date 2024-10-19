@@ -106,7 +106,7 @@ fn reinterpret_i64(n: Int64, kind: IntKind) -> ParsedInt {
     IntK => Int(n.to_int())
     LongK => Long(n)
     UIntK => UnsignedInt(n.to_int().reinterpret_as_uint())
-    ULongK => UnsignedLong(n.to_uint64())
+    ULongK => UnsignedLong(n.reinterpret_as_uint64())
   }
 }
 

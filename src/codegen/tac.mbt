@@ -8,6 +8,7 @@ pub enum TacInst {
   Return(TacValue)
   SignExtend(~src: TacValue, ~dst: TacValue)
   Truncate(~src: TacValue, ~dst: TacValue)
+  ZeroExtend(~src: TacValue, ~dst: TacValue)
   Unary(~op: @parse.UnaryOp, ~src: TacValue, ~dst: TacValue)
   Binary(~op: @parse.BinaryOp, ~lhs: TacValue, ~rhs: TacValue, ~dst: TacValue)
   Copy(~src: TacValue, ~dst: TacValue)

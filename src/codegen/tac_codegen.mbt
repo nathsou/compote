@@ -73,13 +73,20 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
   "case_fallthrough_" + switch_label + "." + case_index.to_string()
 }
 
-fn cast_expr(src: TacValue, dst: TacValue, target_ty: @parse.Type) -> TacInst!TacBuilderError {
+fn cast_expr(src: TacValue, dst: TacValue, src_ty: @parse.Type, dst_ty: @parse.Type) -> TacInst {
     // assuming src.ty != dst.ty
 
-    match target_ty {
-      Long => SignExtend(~src, ~dst)
-      Int => Truncate(~src, ~dst)
-      _ => raise TacBuilderError::Unreachable("unsupported cast")
+    let src_ty_size = src_ty.byte_size()
+    let dst_ty_size = dst_ty.byte_size()
+
+    if dst_ty_size == src_ty_size {
+      return Copy(~src, ~dst)
+    } else if dst_ty_size < src_ty_size {
+      return Truncate(~src, ~dst)
+    } else if src_ty.is_signed() {
+      return SignExtend(~src, ~dst)
+    } else {
+      return ZeroExtend(~src, ~dst)
     }
 }
 
@@ -89,16 +96,18 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
     Variable(~name, ty=_) => Variable(name)
     Cast(~target_ty, ~expr, ty=_) => {
       let res = self.convert_expr!(expr)
+      let expr_ty = expr.ty()
 
-      if target_ty == expr.ty() {
-        res
-      } else {
-        let dst_name = self.next_temp_var(target_ty)
-        let dst = TacValue::Variable(dst_name)
-        self.emit(cast_expr!(res, dst, target_ty))
-
-        dst
+      if target_ty == expr_ty {
+        return res
       }
+
+      let dst_name = self.next_temp_var(target_ty)
+      let dst = TacValue::Variable(dst_name)
+      self.emit(cast_expr(res, dst, expr_ty, target_ty))
+
+      dst
+      
     }
     Unary(~op, ~expr, ~ty) => {
       let src = self.convert_expr!(expr)
@@ -193,9 +202,9 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
             self.emit(Binary(~op, lhs=dst, ~rhs, ~dst))
           } else {
             let tmp = TacValue::Variable(self.next_temp_var(res_ty))
-            self.emit(cast_expr!(dst, tmp, res_ty))
+            self.emit(cast_expr(dst, tmp, lhs_ty, res_ty))
             self.emit(Binary(~op, lhs=tmp, ~rhs, dst=tmp))
-            self.emit(cast_expr!(tmp, dst, lhs_ty))
+            self.emit(cast_expr(tmp, dst, lhs_ty, res_ty))
           }
 
           dst
@@ -523,6 +532,8 @@ pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolT
                 let init: @validate.StaticInit = match ty {
                   Int => IntInit(0)
                   Long => LongInit(0)
+                  UnsignedInt => UIntInit(0)
+                  UnsignedLong => ULongInit(0)
                   _ => raise TacBuilderError::Unreachable("unsupported static variable type")
                 }
 
