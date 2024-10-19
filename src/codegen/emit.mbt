@@ -8,6 +8,7 @@ pub struct Emitter {
 
 pub type! EmitterError {
   UnexpectedPseudoReg(String)
+  Unreachable(String)
 } derive(Show)
 
 pub fn Emitter::new(os: OperatingSystem, symbols: Map[String, @validate.SymbolTableEntry]) -> Emitter {
@@ -145,6 +146,8 @@ fn asm(self: AsmBinaryOp) -> String {
     Mul => "imul"
     Shl => "shl"
     Sal => "sar"
+    Sar => "sar"
+    Shr => "shr"
     And => "and"
     Or => "or"
     Xor => "xor"
@@ -159,6 +162,10 @@ fn suffix(self: CondCode) -> String {
     Le => "le"
     Gt => "g"
     Ge => "ge"
+    Above => "a"
+    AboveEq => "ae"
+    Below => "b"
+    BelowEq => "be"
   }
 }
 
@@ -169,6 +176,9 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
     }
     Movsx(~src, ~dst) => {
       self.emit("movslq \{src.asm!(LongWord, self.os)}, \{dst.asm!(QuadWord, self.os)}")
+    }
+    MovZeroExtend(_) => {
+      raise EmitterError::Unreachable("MovZeroExtend should have been removed by the ReplacePseudoRegs pass")
     }
     Unary(~op, ~dst, ~ty) => {
       self.emit("\{op.asm()}\{ty.suffix()} \{dst.asm!(ty, self.os)}")
@@ -184,6 +194,9 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
     }
     IDiv(~src, ~ty) => {
       self.emit("idiv\{ty.suffix()} \{src.asm!(ty, self.os)}")
+    }
+    Div(~src, ~ty) => {
+      self.emit("div\{ty.suffix()} \{src.asm!(ty, self.os)}")
     }
     Cdq(~ty) => {
       match ty {
@@ -251,6 +264,15 @@ fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit!EmitterError {
   self.indentation -= 1
 }
 
+fn show_initializer(init: @validate.StaticInit) -> String {
+  match init {
+    IntInit(n) => ".long \{n}"
+    LongInit(n) => ".quad \{n}"
+    UIntInit(n) => ".long \{n}"
+    ULongInit(n) => ".quad \{n}"
+  }
+}
+
 fn emit_static_variable_def(self: Emitter, var: AsmStaticVarDef) -> Unit {
   let { name, global, alignment, init } = var
   let name = self.os.symbol(name)
@@ -260,29 +282,23 @@ fn emit_static_variable_def(self: Emitter, var: AsmStaticVarDef) -> Unit {
   }
 
   match init {
-    IntInit(0) | LongInit(0) => {
+    IntInit(0) | LongInit(0) | UIntInit(0) | ULongInit(0) => {
       self.emit(".bss")
       self.emit(self.os.align(alignment))
       self.emit("\{name}:")
       
       let size = match init {
-        IntInit(_) => 4
-        LongInit(_) => 8
+        IntInit(_) | UIntInit(_) => 4
+        LongInit(_) | ULongInit(_) => 8
       }
 
       self.emit(".zero \{size}")
     }
-    IntInit(n) => {
+    IntInit(_) | LongInit(_) | UIntInit(_) | ULongInit(_) => {
       self.emit(".data")
       self.emit(self.os.align(alignment))
       self.emit("\{name}:")
-      self.emit(".long \{n}")
-    }
-    LongInit(n) => {
-      self.emit(".data")
-      self.emit(self.os.align(alignment))
-      self.emit("\{name}:")
-      self.emit(".quad \{n}")
+      self.emit(show_initializer(init))
     }
   }
 }

@@ -59,6 +59,17 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
         Mov(src=Reg(R11), ~dst, ty=QuadWord),
       ]
     }
+    MovZeroExtend(~src, dst=Reg(_) as dst) => {
+      [
+        Mov(~src, ~dst, ty=LongWord),
+      ]
+    }
+    MovZeroExtend(~src, dst=Stack(_) | Data(_) as dst) => {
+      [
+        Mov(~src, dst=Reg(R11), ty=LongWord),
+        Mov(src=Reg(R11), ~dst, ty=QuadWord),
+      ]
+    }
     Binary(op=Mul, ~src, ~dst, ~ty) => {
       let is_large_src_imm = match src {
         Imm(n) => not(fits_in_i32(n))
@@ -123,10 +134,14 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
         _ => [inst]
       }
     }
-    // idiv, cmp instructions do not support immediate operands
+    // div, idiv, cmp instructions do not support immediate operands
     IDiv(src=Imm(n), ~ty) => [
       Mov(src=Imm(n), dst=Reg(R10), ~ty),
       IDiv(src=Reg(R10), ~ty),
+    ]
+    Div(src=Imm(n), ~ty) => [
+      Mov(src=Imm(n), dst=Reg(R10), ~ty),
+      Div(src=Reg(R10), ~ty),
     ]
     Cmp(~src, ~dst, ~ty) => {
       let is_large_src_imm = match src {

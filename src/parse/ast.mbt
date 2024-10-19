@@ -141,6 +141,15 @@ pub fn ty(self: Expr) -> Type {
   }).unwrap()
 }
 
+pub fn ty(self: Constant) -> Type {
+  match self {
+    IntConst(_) => Int
+    LongConst(_) => Long
+    UnsignedIntConst(_) => UnsignedInt
+    UnsignedLongConst(_) => UnsignedLong
+  }
+}
+
 pub fn byte_size(self: Type) -> UInt {
   match self {
     Int | UnsignedInt => 4

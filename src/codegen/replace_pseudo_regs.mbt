@@ -56,6 +56,11 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst! {
       let dst = self.rewrite_operand!(dst)
       Movsx(~src, ~dst)
     }
+    MovZeroExtend(~src, ~dst) => {
+      let src = self.rewrite_operand!(src)
+      let dst = self.rewrite_operand!(dst)
+      MovZeroExtend(~src, ~dst)
+    }
     Unary(~op, ~dst, ~ty) => {
       let dst = self.rewrite_operand!(dst)
       Unary(~op, ~dst, ~ty)
@@ -73,6 +78,10 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst! {
     IDiv(~src, ~ty) => {
       let src = self.rewrite_operand!(src)
       IDiv(~src, ~ty)
+    }
+    Div(~src, ~ty) => {
+      let src = self.rewrite_operand!(src)
+      Div(~src, ~ty)
     }
     Cdq(~ty) => Cdq(~ty)
     Jmp(target) => Jmp(target)
