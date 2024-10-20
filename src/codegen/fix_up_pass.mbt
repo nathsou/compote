@@ -124,13 +124,6 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
             Binary(~op, src=Reg(R10), ~dst, ~ty),
           ]
         }
-        // if the shift amount is an immediate, it can be used directly
-        (_, _, Shl | Sal, Imm(_), _) => [inst]
-        // otherwise, the shift amount must be stored in the cl register
-        (_, _, Shl | Sal, _, _) => [
-          Mov(~src, dst=Reg(CX), ~ty),
-          Binary(~op, src=RegSize(CX, Byte), ~dst, ~ty),
-        ]
         _ => [inst]
       }
     }

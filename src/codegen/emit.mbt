@@ -145,7 +145,7 @@ fn asm(self: AsmBinaryOp) -> String {
     Sub => "sub"
     Mul => "imul"
     Shl => "shl"
-    Sal => "sar"
+    Sal => "sal"
     Sar => "sar"
     Shr => "shr"
     And => "and"

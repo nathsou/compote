@@ -73,7 +73,7 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
   "case_fallthrough_" + switch_label + "." + case_index.to_string()
 }
 
-fn cast_expr(src: TacValue, dst: TacValue, src_ty: @parse.Type, dst_ty: @parse.Type) -> TacInst {
+fn cast_expr(~src: TacValue, ~dst: TacValue, ~src_ty: @parse.Type, ~dst_ty: @parse.Type) -> TacInst {
     // assuming src.ty != dst.ty
 
     let src_ty_size = src_ty.byte_size()
@@ -104,7 +104,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
 
       let dst_name = self.next_temp_var(target_ty)
       let dst = TacValue::Variable(dst_name)
-      self.emit(cast_expr(res, dst, expr_ty, target_ty))
+      self.emit(cast_expr(src=res, ~dst, src_ty=expr_ty, dst_ty=target_ty))
 
       dst
       
@@ -188,8 +188,8 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
         AssignAnd => Some(BitwiseAnd)
         AssignOr => Some(BitwiseOr)
         AssignXor => Some(BitwiseXor)
-        AssignShl => Some(Shl)
-        AssignShr => Some(Shr)
+        AssignShl => Some(ShiftLeft)
+        AssignShr => Some(ShiftRight)
         Assign => None
       }
 
@@ -202,9 +202,11 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
             self.emit(Binary(~op, lhs=dst, ~rhs, ~dst))
           } else {
             let tmp = TacValue::Variable(self.next_temp_var(res_ty))
-            self.emit(cast_expr(dst, tmp, lhs_ty, res_ty))
+            // cast the result of the binary operation to the type of the left-hand side
+            self.emit(cast_expr(src=dst, dst=tmp, src_ty=lhs_ty, dst_ty=res_ty))
             self.emit(Binary(~op, lhs=tmp, ~rhs, dst=tmp))
-            self.emit(cast_expr(tmp, dst, lhs_ty, res_ty))
+            // cast the result back to the type of the left-hand side
+            self.emit(cast_expr(src=tmp, ~dst, src_ty=res_ty, dst_ty=lhs_ty))
           }
 
           dst

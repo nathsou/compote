@@ -94,7 +94,7 @@ pub enum UnaryOp {
 pub enum BinaryOp {
   Add; Sub; Mul; Div; Rem
   BitwiseAnd; BitwiseOr; BitwiseXor;
-  Shl; Shr
+  ShiftLeft; ShiftRight
   Equ; Neq; Lss; Leq; Gtr; Geq
   LogicalAnd; LogicalOr
   Ternary
@@ -111,7 +111,7 @@ pub fn precedence(self: BinaryOp) -> Int {
   match self {
     Mul | Div | Rem => 50
     Add | Sub => 45
-    Shl | Shr => 40
+    ShiftLeft | ShiftRight => 40
     Lss | Leq | Gtr | Geq => 35
     Equ | Neq => 30
     BitwiseAnd => 28

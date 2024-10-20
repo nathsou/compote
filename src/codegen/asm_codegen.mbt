@@ -35,8 +35,8 @@ fn convert_binary_op(op: @parse.BinaryOp, ~is_signed: Bool) -> AsmBinaryOp!AsmBu
     BitwiseAnd => And
     BitwiseOr => Or
     BitwiseXor => Xor
-    Shl => if is_signed { Sal } else { Shl }
-    Shr => if is_signed { Sar } else { Shr }
+    ShiftLeft => if is_signed { Sal } else { Shl }
+    ShiftRight => if is_signed { Sar } else { Shr }
     Div | Rem | Equ | Neq | Lss | Leq | Gtr | Geq |
     LogicalAnd | LogicalOr | Assignment(_) | Ternary => {
       raise UnreachableBinaryOpConversion(op)
@@ -171,6 +171,20 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit!AsmBuilderError {
             self.emit(Mov(src=Imm(0), dst=Reg(DX), ty=lhs_ty))
             self.emit(Div(src=rhs, ty=lhs_ty))
             self.emit(Mov(src=Reg(output_reg), ~dst, ty=lhs_ty))
+          }
+        }
+        ShiftLeft | ShiftRight => {
+          match rhs {
+            Imm(_) => {
+              self.emit(Mov(src=lhs, ~dst, ty=lhs_ty))
+              self.emit(Binary(op=convert_binary_op!(op, ~is_signed), src=rhs, ~dst, ty=lhs_ty))
+            }
+            // if the shift amount is in memory, load it into the CL register
+            _ => {
+              self.emit(Mov(src=lhs, ~dst, ty=lhs_ty))
+              self.emit(Mov(src=rhs, dst=Reg(CX), ty=LongWord))
+              self.emit(Binary(op=convert_binary_op!(op, ~is_signed), src=RegSize(CX, Byte), ~dst, ty=lhs_ty))
+            }
           }
         }
         _ => {

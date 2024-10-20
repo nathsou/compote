@@ -277,7 +277,10 @@ fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type {
     return ty1
   }
 
-  if ty1.byte_size() == ty2.byte_size() {
+  let ty1_size = ty1.byte_size()
+  let ty2_size = ty2.byte_size()
+
+  if ty1_size == ty2_size {
     if ty1.is_signed() {
       return ty2
     } else {
@@ -285,11 +288,7 @@ fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type {
     }
   }
   
-  if ty1.byte_size() > ty2.byte_size() {
-    return ty1
-  } else {
-    return ty2
-  }
+  if ty1_size > ty2_size { ty1 } else { ty2 }
 }
 
 fn cast(expr: @parse.Expr, ty: @parse.Type) -> @parse.Expr {
@@ -333,7 +332,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
       let lhs = self.typed_expr!(lhs)
       let rhs = self.typed_expr!(rhs)
       match op {
-        Shl | Shr => Binary(~op, ~lhs, ~rhs, ty=Some(lhs.ty()))
+        ShiftLeft | ShiftRight => Binary(~op, ~lhs, ~rhs, ty=Some(lhs.ty()))
         LogicalAnd | LogicalOr => Binary(~op, ~lhs, ~rhs, ty=Some(Int))
         _ => {
           let common_ty = get_common_type(lhs.ty(), rhs.ty())
