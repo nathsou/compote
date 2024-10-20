@@ -62,8 +62,8 @@ pub impl Show for AssignmentOp with output(self, logger: Logger) {
     AssignAnd => "&="
     AssignOr => "|="
     AssignXor => "^="
-    AssignShl => "<<="
-    AssignShr => ">>="
+    AssignSiftLeft => "<<="
+    AssignShiftRight => ">>="
   })
 }
 

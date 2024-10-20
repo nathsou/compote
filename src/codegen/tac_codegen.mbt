@@ -179,24 +179,10 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue!TacBuilderError
       dst
     }
     Assignment(~op, lhs=Variable(~name, ty=Some(lhs_ty)), ~rhs, ty=Some(res_ty)) => {
-      let compound_op: Option[@parse.BinaryOp] = match op {
-        AssignAdd => Some(Add)
-        AssignSub => Some(Sub)
-        AssignMul => Some(Mul)
-        AssignDiv => Some(Div)
-        AssignRem => Some(Rem)
-        AssignAnd => Some(BitwiseAnd)
-        AssignOr => Some(BitwiseOr)
-        AssignXor => Some(BitwiseXor)
-        AssignShl => Some(ShiftLeft)
-        AssignShr => Some(ShiftRight)
-        Assign => None
-      }
-
       let rhs = self.convert_expr!(rhs)
       let dst = TacValue::Variable(name)
 
-      match compound_op {
+      match op.binop() {
         Some(op) => {
           if lhs_ty == res_ty {
             self.emit(Binary(~op, lhs=dst, ~rhs, ~dst))

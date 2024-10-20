@@ -1,6 +1,8 @@
 
 pub enum StaticInit {
-  IntInit(Int); LongInit(Int64); UIntInit(UInt); ULongInit(UInt64)
+  IntInit(Int); LongInit(Int64)
+  UIntInit(UInt); ULongInit(UInt64)
+  DoubleInit(Double)
 } derive(Show, Eq)
 
 pub enum InitialValue {
@@ -12,28 +14,39 @@ fn convert_to(const: @parse.Constant, ty: @parse.Type) -> StaticInit!TypeChecker
     Int => match const {
       IntConst(n) => IntInit(n)
       LongConst(n) => IntInit(n.to_int())
-      UnsignedIntConst(n) => UIntInit(n)
-      UnsignedLongConst(n) => UIntInit(n.to_uint())
+      UnsignedIntConst(n) => IntInit(n.reinterpret_as_int())
+      UnsignedLongConst(n) => IntInit(n.to_int())
+      DoubleConst(x) => IntInit(x.to_int())
     }
     Long => match const {
       IntConst(n) => LongInit(n.to_int64())
       LongConst(n) => LongInit(n)
       UnsignedIntConst(n) => LongInit(n.to_int64())
       UnsignedLongConst(n) => LongInit(n.to_int64())
+      DoubleConst(x) => LongInit(x.to_int64())
     }
     UnsignedInt => match const {
       IntConst(n) => UIntInit(n.reinterpret_as_uint())
       LongConst(n) => UIntInit(n.reinterpret_as_uint64().to_uint())
       UnsignedIntConst(n) => UIntInit(n)
       UnsignedLongConst(n) => UIntInit(n.to_uint())
+      DoubleConst(x) => UIntInit(x.reinterpret_as_uint64().to_uint())
     }
     UnsignedLong => match const {
       IntConst(n) => ULongInit(n.to_uint64())
       LongConst(n) => ULongInit(n.reinterpret_as_uint64())
       UnsignedIntConst(n) => ULongInit(n.to_uint64())
       UnsignedLongConst(n) => ULongInit(n)
+      DoubleConst(x) => ULongInit(x.reinterpret_as_uint64())
     }
-    _ => raise TypeCheckerError::Unreachable("non-integer static variable initializer")
+    Double => match const {
+      IntConst(n) => DoubleInit(n.to_double())
+      LongConst(n) => DoubleInit(n.to_double())
+      UnsignedIntConst(n) => DoubleInit(n.to_int64().to_double())
+      UnsignedLongConst(n) => DoubleInit(n.to_double())
+      DoubleConst(x) => DoubleInit(x)
+    }
+    FunType(_) => raise TypeCheckerError::Unreachable("non-numerical static variable initializer")
   }
 }
 
@@ -79,6 +92,8 @@ pub type! TypeCheckerError {
   InitializerOnLocalExternVarDecl(String)
   NonConstantInitializerOnLocalStaticVar(~variable: String, ~init: @parse.Expr)
   StorageClassNotPermittedInForLoopInitializer
+  IllegalUnaryOperatorForDouble(@parse.UnaryOp)
+  IllegalBinaryOperatorForDouble(@parse.BinaryOp)
   Unreachable(String)
 } derive(Show)
 
@@ -277,6 +292,10 @@ fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type {
     return ty1
   }
 
+  if ty1 == Double || ty2 == Double {
+    return Double
+  }
+
   let ty1_size = ty1.byte_size()
   let ty2_size = ty2.byte_size()
 
@@ -289,6 +308,13 @@ fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type {
   }
   
   if ty1_size > ty2_size { ty1 } else { ty2 }
+}
+
+fn is_illegal_binop_for_double(op: @parse.BinaryOp) -> Bool {
+  match op {
+    Rem | BitwiseAnd | BitwiseOr | BitwiseXor | ShiftLeft | ShiftRight => true
+    _ => false
+  }
 }
 
 fn cast(expr: @parse.Expr, ty: @parse.Type) -> @parse.Expr {
@@ -306,6 +332,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
       LongConst(_) => Constant(~const, ty=Some(Long))
       UnsignedIntConst(_) => Constant(~const, ty=Some(UnsignedInt))
       UnsignedLongConst(_) => Constant(~const, ty=Some(UnsignedLong))
+      DoubleConst(_) => Constant(~const, ty=Some(Double))
     }
     Variable(~name, ty=_) => {
       match self.symbols[name] {
@@ -320,10 +347,15 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
     }
     Unary(~op, ~expr, ty=_) => {
       let expr = self.typed_expr!(expr)
+      let expr_ty = expr.ty()
 
       let ty: @parse.Type = match op {
         Not => Int
-        _ => expr.ty()
+        _ => expr_ty
+      }
+
+      if op == Complement && expr_ty == Double {
+        raise IllegalUnaryOperatorForDouble(op)
       }
 
       Unary(~op, ~expr, ty=Some(ty))
@@ -331,11 +363,16 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
     Binary(~op, ~lhs, ~rhs, ty=_) => {
       let lhs = self.typed_expr!(lhs)
       let rhs = self.typed_expr!(rhs)
+      let common_ty = get_common_type(lhs.ty(), rhs.ty())
+
+      if common_ty == Double && is_illegal_binop_for_double(op) {
+        raise IllegalBinaryOperatorForDouble(op)
+      }
+
       match op {
         ShiftLeft | ShiftRight => Binary(~op, ~lhs, ~rhs, ty=Some(lhs.ty()))
         LogicalAnd | LogicalOr => Binary(~op, ~lhs, ~rhs, ty=Some(Int))
         _ => {
-          let common_ty = get_common_type(lhs.ty(), rhs.ty())
           let lhs = cast(lhs, common_ty)
           let rhs = cast(rhs, common_ty)
 
@@ -354,13 +391,24 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr!TypeCheck
     Assignment(~op, ~lhs, ~rhs, ty=_) => {
       let lhs = self.typed_expr!(lhs)
       let rhs = self.typed_expr!(rhs)
+      let common_ty = get_common_type(lhs.ty(), rhs.ty())
+
+      if common_ty == Double {
+        match op.binop() {
+          Some(op) => {
+            if is_illegal_binop_for_double(op) {
+              raise IllegalBinaryOperatorForDouble(op)
+            }
+          }
+          None => ()
+        }
+      }
 
       match op {
-        AssignShl | AssignShr => {
+        AssignSiftLeft | AssignShiftRight => {
           Assignment(~op, ~lhs, ~rhs, ty=Some(lhs.ty()))
         }
         _ => {
-          let common_ty = get_common_type(lhs.ty(), rhs.ty())
           Assignment(~op, ~lhs, rhs=cast(rhs, common_ty), ty=Some(common_ty))
         }
       }

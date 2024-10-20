@@ -105,7 +105,7 @@ pub enum BinaryOp {
 
 pub enum AssignmentOp {
   Assign; AssignAdd; AssignSub; AssignMul; AssignDiv; AssignRem
-  AssignAnd; AssignOr; AssignXor; AssignShl; AssignShr
+  AssignAnd; AssignOr; AssignXor; AssignSiftLeft; AssignShiftRight
 } derive(Eq)
 
 // https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
@@ -165,6 +165,22 @@ pub fn is_signed(self: Type) -> Bool {
   match self {
     Int | Long | Double => true
     UnsignedInt | UnsignedLong | FunType(_) => false
+  }
+}
+
+pub fn binop(self: AssignmentOp) -> BinaryOp? {
+  match self {
+    AssignAdd => Some(Add)
+    AssignSub => Some(Sub)
+    AssignMul => Some(Mul)
+    AssignDiv => Some(Div)
+    AssignRem => Some(Rem)
+    AssignAnd => Some(BitwiseAnd)
+    AssignOr => Some(BitwiseOr)
+    AssignXor => Some(BitwiseXor)
+    AssignSiftLeft => Some(ShiftLeft)
+    AssignShiftRight => Some(ShiftRight)
+    Assign => None
   }
 }
 
