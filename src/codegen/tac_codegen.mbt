@@ -75,18 +75,25 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
 
 fn cast_expr(~src: TacValue, ~dst: TacValue, ~src_ty: @parse.Type, ~dst_ty: @parse.Type) -> TacInst {
     // assuming src.ty != dst.ty
+    match (src_ty, dst_ty) {
+      (Int | Long, Double) => IntToDouble(~src, ~dst)
+      (UnsignedInt | UnsignedLong, Double) => UIntToDouble(~src, ~dst)
+      (Double, Int | Long) => DoubleToInt(~src, ~dst)
+      (Double, UnsignedInt | UnsignedLong) => DoubleToUInt(~src, ~dst)
+      _ => {
+        let src_ty_size = src_ty.byte_size()
+        let dst_ty_size = dst_ty.byte_size()
 
-    let src_ty_size = src_ty.byte_size()
-    let dst_ty_size = dst_ty.byte_size()
-
-    if dst_ty_size == src_ty_size {
-      return Copy(~src, ~dst)
-    } else if dst_ty_size < src_ty_size {
-      return Truncate(~src, ~dst)
-    } else if src_ty.is_signed() {
-      return SignExtend(~src, ~dst)
-    } else {
-      return ZeroExtend(~src, ~dst)
+        if dst_ty_size == src_ty_size {
+          Copy(~src, ~dst)
+        } else if dst_ty_size < src_ty_size {
+          Truncate(~src, ~dst)
+        } else if src_ty.is_signed() {
+          SignExtend(~src, ~dst)
+        } else {
+          ZeroExtend(~src, ~dst)
+        }
+      }
     }
 }
 
@@ -522,6 +529,7 @@ pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolT
                   Long => LongInit(0)
                   UnsignedInt => UIntInit(0)
                   UnsignedLong => ULongInit(0)
+                  Double => DoubleInit(0)
                   _ => raise TacBuilderError::Unreachable("unsupported static variable type")
                 }
 

@@ -22,7 +22,7 @@ fn convert_to(const: @parse.Constant, ty: @parse.Type) -> StaticInit!TypeChecker
       IntConst(n) => LongInit(n.to_int64())
       LongConst(n) => LongInit(n)
       UnsignedIntConst(n) => LongInit(n.to_int64())
-      UnsignedLongConst(n) => LongInit(n.to_int64())
+      UnsignedLongConst(n) => LongInit(n.reinterpret_as_int64())
       DoubleConst(x) => LongInit(x.to_int64())
     }
     UnsignedInt => match const {

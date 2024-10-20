@@ -61,7 +61,7 @@ fn asm(self: TacValue) -> AsmOperand {
     Constant(IntConst(n)) => Imm(n.to_int64())
     Constant(LongConst(n)) => Imm(n)
     Constant(UnsignedIntConst(n)) => Imm(n.to_int64())
-    Constant(UnsignedLongConst(n)) => Imm(n.to_int64())
+    Constant(UnsignedLongConst(n)) => Imm(n.reinterpret_as_int64())
     Variable(name) => Pseudo(name)
   }
 }
