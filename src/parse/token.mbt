@@ -62,7 +62,7 @@ pub fn to_binop(self: Token) -> BinaryOp? {
 
 pub fn is_type_specifier(self: Token) -> Bool {
   match self {
-    Int | Long | Unsigned | Signed => true
+    Int | Long | Unsigned | Signed | Double => true
     _ => false
   }
 }

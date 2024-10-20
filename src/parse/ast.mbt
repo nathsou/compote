@@ -4,6 +4,7 @@ pub enum Type {
   Long
   UnsignedInt
   UnsignedLong
+  Double
   FunType(~params: Array[Type], ~ret: Type)
 } derive(Eq)
 
@@ -12,6 +13,7 @@ pub enum Constant {
   LongConst(Int64)
   UnsignedIntConst(UInt)
   UnsignedLongConst(UInt64)
+  DoubleConst(Double)
 } derive (Eq, Hash)
 
 pub enum StorageClass {
@@ -147,20 +149,21 @@ pub fn ty(self: Constant) -> Type {
     LongConst(_) => Long
     UnsignedIntConst(_) => UnsignedInt
     UnsignedLongConst(_) => UnsignedLong
+    DoubleConst(_) => Double
   }
 }
 
 pub fn byte_size(self: Type) -> UInt {
   match self {
     Int | UnsignedInt => 4
-    Long | UnsignedLong => 8
+    Long | UnsignedLong | Double => 8
     FunType(_) => 0
   }
 }
 
 pub fn is_signed(self: Type) -> Bool {
   match self {
-    Int | Long => true
+    Int | Long | Double => true
     UnsignedInt | UnsignedLong | FunType(_) => false
   }
 }

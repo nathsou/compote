@@ -11,6 +11,7 @@ pub type! ParserError {
   TrailingComma
   InvalidTypeSpecifier(Array[Specifier])
   InvalidStorageClassSpecifier
+  DoubleCannotBeCombinedWithOtherTypeSpecifiers
 } derive(Show)
 
 pub fn Parser::new(tokens: Array[Token]) -> Parser {
@@ -84,6 +85,23 @@ fn has_duplicate_specifiers(specifiers: Array[Specifier]) -> Bool {
 }
 
 fn parse_type_specifiers(specifiers: Array[Specifier], ~allow_storage_classes: Bool) -> Type!ParserError {
+  if specifiers.contains(TypeSpecifier(Double)) {
+    let mut type_specifiers_count = 0
+
+    for specifier in specifiers {
+      match specifier {
+        TypeSpecifier(_) => type_specifiers_count += 1
+        _ => ()
+      }
+    }
+
+    if type_specifiers_count == 1 {
+      return Double
+    } else {
+      raise DoubleCannotBeCombinedWithOtherTypeSpecifiers
+    }
+  }
+
   if
     specifiers.is_empty() ||
     (specifiers.contains(TypeSpecifier(Unsigned)) && specifiers.contains(TypeSpecifier(Signed)) ||
@@ -172,6 +190,18 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
       self.advance()
       Constant(const=LongConst(n), ty=None)
     }
+    UIntLiteral(n) => {
+      self.advance()
+      Constant(const=UnsignedIntConst(n), ty=None)
+    }
+    ULongLiteral(n) => {
+      self.advance()
+      Constant(const=UnsignedLongConst(n), ty=None)
+    }
+    DoubleLiteral(n) => {
+      self.advance()
+      Constant(const=DoubleConst(n), ty=None)
+    }
     Identifier(name) => {
       self.advance()
 
@@ -181,14 +211,6 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
       } else {
         Variable(~name, ty=None)
       }
-    }
-    UIntLiteral(n) => {
-      self.advance()
-      Constant(const=UnsignedIntConst(n), ty=None)
-    }
-    ULongLiteral(n) => {
-      self.advance()
-      Constant(const=UnsignedLongConst(n), ty=None)
     }
     Lparen => {
       self.advance()
@@ -469,7 +491,7 @@ fn parse_block_item(self: Parser) -> BlockItem!ParserError {
 }
 
 enum TypeSpecifier {
-  Int; Long; Unsigned; Signed
+  Int; Long; Unsigned; Signed; Double
 } derive(Eq, Hash, Show)
 
 enum Specifier {
@@ -493,6 +515,10 @@ fn parse_specifiers(self: Parser) -> Array[Specifier] {
       Unsigned => {
         self.advance()
         specifiers.push(TypeSpecifier(Unsigned))
+      }
+      Double => {
+        self.advance()
+        specifiers.push(TypeSpecifier(Double))
       }
       Signed => {
         self.advance()

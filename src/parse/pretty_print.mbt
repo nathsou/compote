@@ -36,6 +36,7 @@ pub impl Show for Type with output(self, logger: Logger) {
     Long => "long"
     UnsignedInt => "unsigned int"
     UnsignedLong => "unsigned long"
+    Double => "double"
     FunType(~params, ~ret) => "fun(" + String::concat(params.map(Show::to_string), separator=", ") + ") -> " + Show::to_string(ret)
   })
 }
@@ -104,6 +105,7 @@ pub impl Show for Constant with output(self, logger: Logger) {
     LongConst(n) => n.to_string() + "L"
     UnsignedIntConst(n) => n.to_string() + "U"
     UnsignedLongConst(n) => n.to_string() + "UL"
+    DoubleConst(n) => n.to_string()
   })
 }
 
