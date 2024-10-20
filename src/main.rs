@@ -58,7 +58,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(Arg::with_name("S")
              .short("S")
              .help("Compile only; do not assemble or link"))
-        // Modified to accept multiple source files
+        .arg(Arg::with_name("library")
+             .short("l")
+             .takes_value(true)
+             .multiple(true)
+             .help("Link with the specified library"))
         .arg(Arg::with_name("source")
              .required(true)
              .multiple(true)
@@ -67,6 +71,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Collect the source files
     let source_files: Vec<&str> = matches.values_of("source").unwrap().collect();
+
+    // Collect libraries
+    let libraries: Vec<&str> = matches.values_of("library").unwrap_or_default().collect();
 
     // Determine the compilation stage
     let stage = if matches.is_present("lex") {
@@ -94,14 +101,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Iterate over each source file
     for source_file in source_files {
         // Process each source file individually
-        process_source_file(source_file, &matches, &stage, &os)?;
+        process_source_file(source_file, &matches, &stage, &os, &libraries)?;
     }
 
     Ok(())
 }
 
 // Function to process a single source file
-fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &DriverStage, os: &OperatingSystem) -> Result<(), Box<dyn std::error::Error>> {
+fn process_source_file(
+    source_file: &str,
+    matches: &clap::ArgMatches,
+    stage: &DriverStage,
+    os: &OperatingSystem,
+    libraries: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
     // Read and preprocess the source file
     let preprocessed = preprocess(source_file)?;
 
@@ -248,7 +261,7 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
                     } else {
                         // Assemble the code into an executable
                         let output_file_path = Path::new(source_file).with_extension("");
-                        assemble(&asm_code, output_file_path.to_str().unwrap())?;
+                        assemble(&asm_code, output_file_path.to_str().unwrap(), libraries)?;
                     }
                 },
                 Err(err_msg) => {
@@ -280,7 +293,7 @@ fn preprocess(source_file: &str) -> io::Result<String> {
 }
 
 // Function to assemble the assembly code using clang
-fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
+fn assemble(assembly_code: &str, output_file_path: &str, libraries: &[&str]) -> io::Result<()> {
     // Create a temporary file with the assembly code
     use std::fs::File;
     use std::io::Write;
@@ -296,11 +309,18 @@ fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
     }
 
     // Invoke clang to assemble and link
-    let output = Command::new(CC)
-        .arg(&asm_file_path)
+    let mut cmd = Command::new(CC);
+
+    cmd.arg(&asm_file_path)
         .arg("-o")
-        .arg(&output_file_path)
-        .output()?;
+        .arg(&output_file_path);
+
+    // Append library options
+    for lib in libraries {
+        cmd.arg(format!("-l{lib}"));
+    }
+
+    let output = cmd.output()?;
 
     // Clean up temporary file
     fs::remove_file(&asm_file_path)?;

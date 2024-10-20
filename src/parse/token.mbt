@@ -11,13 +11,15 @@ pub enum Token {
   AmpersandEqual; PipeEqual; CaretEqual; LshiftEqual; RshiftEqual
   PlusPlus; MinusMinus
   // keywords
-  Int; Long; Signed; Unsigned
+  Int; Long; Signed; Unsigned; Double
   Return; Void; If; Else; Goto
   Do; While; For; Break; Continue
   Switch; Case; Default
   Static; Extern
   // literals
-  IntLiteral(Int); LongLiteral(Int64); UIntLiteral(UInt); ULongLiteral(UInt64)
+  IntLiteral(Int); LongLiteral(Int64)
+  UIntLiteral(UInt); ULongLiteral(UInt64)
+  DoubleLiteral(Double)
   // identifiers
   Identifier(String)
 } derive(Eq)
@@ -119,6 +121,7 @@ pub impl Show for Token with output(self, logger: Logger) {
     Long => "long"
     Signed => "signed"
     Unsigned => "unsigned"
+    Double => "double"
     Return => "return"
     Void => "void"
     If => "if"
@@ -138,6 +141,7 @@ pub impl Show for Token with output(self, logger: Logger) {
     LongLiteral(n) => n.to_string()
     UIntLiteral(n) => n.to_string()
     ULongLiteral(n) => n.to_string()
+    DoubleLiteral(n) => n.to_string()
     Identifier(s) => s
   })
 }
