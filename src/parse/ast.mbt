@@ -2,17 +2,21 @@
 pub enum Type {
   Int
   Long
+  UnsignedInt
+  UnsignedLong
   FunType(~params: Array[Type], ~ret: Type)
 } derive(Eq)
 
 pub enum Constant {
   IntConst(Int)
   LongConst(Int64)
+  UnsignedIntConst(UInt)
+  UnsignedLongConst(UInt64)
 } derive (Eq, Hash)
 
 pub enum StorageClass {
   Static; Extern
-} derive(Eq)
+} derive(Eq, Hash)
 
 pub enum Expr {
   Constant(~const: Constant, ~ty: Type?)
@@ -90,7 +94,7 @@ pub enum UnaryOp {
 pub enum BinaryOp {
   Add; Sub; Mul; Div; Rem
   BitwiseAnd; BitwiseOr; BitwiseXor;
-  Shl; Shr
+  ShiftLeft; ShiftRight
   Equ; Neq; Lss; Leq; Gtr; Geq
   LogicalAnd; LogicalOr
   Ternary
@@ -107,7 +111,7 @@ pub fn precedence(self: BinaryOp) -> Int {
   match self {
     Mul | Div | Rem => 50
     Add | Sub => 45
-    Shl | Shr => 40
+    ShiftLeft | ShiftRight => 40
     Lss | Leq | Gtr | Geq => 35
     Equ | Neq => 30
     BitwiseAnd => 28
@@ -121,29 +125,64 @@ pub fn precedence(self: BinaryOp) -> Int {
 }
 
 pub fn to_type(self: FunctionDecl) -> Type {
-  FunType(~params=self.params.map(fn(param) { param.ty }), ~ret=self.return_ty)
+  FunType(params=self.params.map(fn(param) { param.ty }), ret=self.return_ty)
 }
 
 pub fn ty(self: Expr) -> Type {
   (match self {
-    Constant(~const=_, ~ty) => ty
-    Variable(~name=_, ~ty) => ty
-    Cast(~target_ty=_, ~expr=_, ~ty) => ty
-    Unary(~op=_, ~expr=_, ~ty) => ty
-    Binary(~op=_, ~lhs=_, ~rhs=_, ~ty) => ty
-    Assignment(~op=_, ~lhs=_, ~rhs=_, ~ty) => ty
-    Conditional(~cond=_, ~then=_, ~otherwise=_, ~ty) => ty
-    Call(~name=_, ~args=_, ~ty) => ty
+    Constant(const=_, ~ty) => ty
+    Variable(name=_, ~ty) => ty
+    Cast(target_ty=_, expr=_, ~ty) => ty
+    Unary(op=_, expr=_, ~ty) => ty
+    Binary(op=_, lhs=_, rhs=_, ~ty) => ty
+    Assignment(op=_, lhs=_, rhs=_, ~ty) => ty
+    Conditional(cond=_, then=_, otherwise=_, ~ty) => ty
+    Call(name=_, args=_, ~ty) => ty
   }).unwrap()
 }
 
+pub fn ty(self: Constant) -> Type {
+  match self {
+    IntConst(_) => Int
+    LongConst(_) => Long
+    UnsignedIntConst(_) => UnsignedInt
+    UnsignedLongConst(_) => UnsignedLong
+  }
+}
+
+pub fn byte_size(self: Type) -> UInt {
+  match self {
+    Int | UnsignedInt => 4
+    Long | UnsignedLong => 8
+    FunType(_) => 0
+  }
+}
+
+pub fn is_signed(self: Type) -> Bool {
+  match self {
+    Int | Long => true
+    UnsignedInt | UnsignedLong | FunType(_) => false
+  }
+}
 
 pub fn fit_const_to_type(const: Constant, ty: Type) -> Constant! {
   match (const, ty) {
     (IntConst(n), Int) => IntConst(n)
     (IntConst(n), Long) => LongConst(n.to_int64())
+    (IntConst(n), UnsignedInt) => UnsignedIntConst(n.reinterpret_as_uint())
+    (IntConst(n), UnsignedLong) => UnsignedLongConst(n.to_uint64())
     (LongConst(n), Int) => IntConst(n.to_int())
     (LongConst(n), Long) => LongConst(n)
-    _ => raise Failure("Invalid constant type conversion")
+    (LongConst(n), UnsignedInt) => UnsignedIntConst(n.reinterpret_as_uint64().to_uint())
+    (LongConst(n), UnsignedLong) => UnsignedLongConst(n.reinterpret_as_uint64())
+    (UnsignedIntConst(n), UnsignedInt) => UnsignedIntConst(n)
+    (UnsignedIntConst(n), UnsignedLong) => UnsignedLongConst(n.to_uint64())
+    (UnsignedIntConst(n), Int) => IntConst(n.reinterpret_as_int())
+    (UnsignedIntConst(n), Long) => LongConst(n.to_int64())
+    (UnsignedLongConst(n), UnsignedInt) => UnsignedIntConst(n.to_uint())
+    (UnsignedLongConst(n), UnsignedLong) => UnsignedLongConst(n)
+    (UnsignedLongConst(n), Long) => LongConst(n.to_int64())
+    (UnsignedLongConst(n), Int) => IntConst(n.to_int())
+    (_, FunType(_)) => raise Failure("Invalid constant type conversion")
   }
 }

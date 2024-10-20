@@ -28,10 +28,10 @@ pub fn declare_shadowing[T](self: Scope[T], name: String, value: T) -> Unit {
 }
 
 pub fn contains[T](self: Scope[T], name: String) -> Bool {
-  self.members.contains(name) || match self.parent {
+  self.members.contains(name) || (match self.parent {
     Some(parent) => parent.contains(name)
     None => false
-  }
+  })
 }
 
 pub fn contains_local[T](self: Scope[T], name: String) -> Bool {

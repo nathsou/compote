@@ -8,7 +8,7 @@ pub enum AsmType {
 } derive (Eq, Show)
 
 pub enum CondCode {
-  Eq; Ne; Gt; Ge; Lt; Le
+  Eq; Ne; Gt; Ge; Lt; Le; Above; AboveEq; Below; BelowEq
 } derive(Show)
 
 pub enum RegSize {
@@ -31,16 +31,18 @@ pub enum AsmUnaryOp {
 pub enum AsmBinaryOp {
   Add; Sub; Mul
   And; Or; Xor
-  Shl; Sal
+  Shl; Sal; Sar; Shr
 } derive(Show)
 
 pub enum AsmInst {
   Mov(~src: AsmOperand, ~dst: AsmOperand, ~ty: AsmType)
   Movsx(~src: AsmOperand, ~dst: AsmOperand)
+  MovZeroExtend(~src: AsmOperand, ~dst: AsmOperand)
   Unary(~op: AsmUnaryOp, ~dst: AsmOperand, ~ty: AsmType)
   Binary(~op: AsmBinaryOp, ~src: AsmOperand, ~dst: AsmOperand, ~ty: AsmType)
   Cmp(~src: AsmOperand, ~dst: AsmOperand, ~ty: AsmType)
   IDiv(~src: AsmOperand, ~ty: AsmType)
+  Div(~src: AsmOperand, ~ty: AsmType)
   Cdq(~ty: AsmType)
   Jmp(String)
   JmpCond(~cond: CondCode, ~target: String)
@@ -104,14 +106,14 @@ pub type BackendSymbolTable Map[String, BackendSymbolTableEntry]
 
 fn get_symbol_ty(self: BackendSymbolTable, name: String) -> AsmType! {
   match self._[name] {
-    Some(ObjEntry(~ty, ~is_static=_)) => ty
+    Some(ObjEntry(~ty, is_static=_)) => ty
     _ => raise Failure("symbol not found in symbol table")
   }
 }
 
 fn is_symbol_static(self: BackendSymbolTable, name: String) -> Bool {
   match self._[name] {
-    Some(ObjEntry(~ty=_, ~is_static)) => is_static
+    Some(ObjEntry(ty=_, ~is_static)) => is_static
     _ => false
   }
 }

@@ -72,14 +72,50 @@ fn skip_whitespaces(self: Lexer) -> Unit {
   }
 }
 
-enum ParsedInt {
+priv enum ParsedInt {
   Int(Int)
   Long(Int64)
+  UnsignedInt(UInt)
+  UnsignedLong(UInt64)
 }
+
+let zero_ascii: Int = '0'.to_int()
+
+fn parse_digit(c: Char) -> Int {
+  c.to_int() - zero_ascii
+}
+
+fn parse_i64(s: String) -> Int64 {
+  // assumes the string only contains (base-10) digits
+  let mut n: Int64 = 0
+  let p: Int64 = 10
+
+  for c in s {
+    n = n * p + parse_digit(c).to_int64()
+  }
+
+  n
+}
+
+priv enum IntKind {
+  IntK; LongK; UIntK; ULongK
+}
+
+fn reinterpret_i64(n: Int64, kind: IntKind) -> ParsedInt {
+  match kind {
+    IntK => Int(n.to_int())
+    LongK => Long(n)
+    UIntK => UnsignedInt(n.to_int().reinterpret_as_uint())
+    ULongK => UnsignedLong(n.reinterpret_as_uint64())
+  }
+}
+
+let max_int: Int64 = @int.max_value.to_int64()
+let min_int: Int64 = @int.min_value.to_int64()
 
 fn parse_integer(self: Lexer) -> ParsedInt!LexerError {
   let mut digits = ""
-  
+
   for i in self.index..<self.input.length() {
     let char = self.input[i]
 
@@ -97,33 +133,38 @@ fn parse_integer(self: Lexer) -> ParsedInt!LexerError {
     let char = self.peek()
 
     if is_alphanumeric(char) {
-      suffix += char.to_string()
+      suffix += char.to_string().to_lower()
       self.advance()
     } else {
       break
     }
   }
 
-  let is_long = match suffix {
-    "" => false
-    "l" | "L" => true
+  let value = parse_i64(digits)
+
+  let kind = match suffix {
+    "l" => LongK
+    "ul" | "lu" => ULongK
+    "u" => {
+      // if the value is out of range for an int, return a long
+      if value > max_int || value < min_int {
+        ULongK
+      } else {
+        UIntK
+      }
+    }
+    "" => {
+      // if the value is out of range for an int, return a long
+      if value > max_int || value < min_int {
+        LongK
+      } else {
+        IntK
+      }
+    }
     _ => raise InvalidIntegerLiteral(digits + suffix)
   }
 
-  match @strconv.parse_int64?(digits) {
-    Err(_) => raise InvalidIntegerLiteral(digits)
-    Ok(value) => match is_long {
-      true => Long(value)
-      false => {
-        // if the value is out of range for an int, return a long
-        if value > @int.max_value.to_int64() || value < @int.min_value.to_int64() {
-          Long(value)
-        } else {
-          Int(value.to_int())
-        }
-      }
-    }
-  }
+  reinterpret_i64(value, kind)
 }
 
 fn parse_identifier(self: Lexer) -> String {
@@ -337,6 +378,8 @@ fn next(self: Lexer) -> LexerResult {
           Ok(value) => match value {
             Int(n) => Ok(IntLiteral(n))
             Long(n) => Ok(LongLiteral(n))
+            UnsignedInt(n) => Ok(UIntLiteral(n))
+            UnsignedLong(n) => Ok(ULongLiteral(n))
           }
         }
       } else if is_alpha(char) || char == '_' {
@@ -345,6 +388,8 @@ fn next(self: Lexer) -> LexerResult {
         Ok(match identifier {
           "int" => Int
           "long" => Long
+          "signed" => Signed
+          "unsigned" => Unsigned
           "return" => Return
           "void" => Void
           "if" => If

@@ -21,7 +21,7 @@ fn read_source_file() -> String {
     chars.push(read_source_file_char(i).to_string())
   }
 
-  chars.join("")
+  String::concat(chars)
 }
 
 fn lex_stage(source: String) -> Array[@parse.Token]!CompilerError {
@@ -97,7 +97,7 @@ fn compile(stage: DriverStage, os: @codegen.OperatingSystem) -> String!CompilerE
   match stage {
     Lex => {
       let tokens = lex_stage!(source)
-      tokens.join(" ")
+      String::concat(tokens.map(Show::to_string), separator=" ")
     }
     Parse => {
       let program = parse_stage!(source)

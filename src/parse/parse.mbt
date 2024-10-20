@@ -9,7 +9,7 @@ pub type! ParserError {
   ExpectedExpr(Token)
   EmptyParamListNotSupportedUseVoidInstead
   TrailingComma
-  InvalidTypeSpecifier
+  InvalidTypeSpecifier(Array[Specifier])
   InvalidStorageClassSpecifier
 } derive(Show)
 
@@ -35,7 +35,7 @@ fn expect(self: Parser, expected: Token) -> Unit!ParserError {
   if token == expected {
     self.advance()
   } else {
-    raise UnexpectedToken(~expected, ~received=token)
+    raise UnexpectedToken(~expected, received=token)
   }
 }
 
@@ -72,18 +72,54 @@ fn parse_identifier(self: Parser) -> String!ParserError {
   }
 }
 
-fn parse_type_specifiers(specifiers: Array[Specifier]) -> Type!ParserError {
-  match specifiers {
-    [TypeSpecifier(Int)] => Type::Int
-    [TypeSpecifier(Long)] |
-    [TypeSpecifier(Int), TypeSpecifier(Long)] |
-    [TypeSpecifier(Long), TypeSpecifier(Int)] => Type::Long
-    _ => raise InvalidTypeSpecifier
+fn has_duplicate_specifiers(specifiers: Array[Specifier]) -> Bool {
+  let specifiers_counts = {}
+
+  for specifier in specifiers {
+    let count = specifiers_counts.get_or_default(specifier, 0);
+    specifiers_counts[specifier] = count + 1
   }
+
+  specifiers_counts.values().any(fn(count) { count > 1 })
 }
 
-fn parse_type(self: Parser) -> Type!ParserError {
-  parse_type_specifiers!(self.parse_specifiers())
+fn parse_type_specifiers(specifiers: Array[Specifier], ~allow_storage_classes: Bool) -> Type!ParserError {
+  if
+    specifiers.is_empty() ||
+    (specifiers.contains(TypeSpecifier(Unsigned)) && specifiers.contains(TypeSpecifier(Signed)) ||
+    has_duplicate_specifiers(specifiers)
+  ) {
+    raise InvalidTypeSpecifier(specifiers)
+  }
+
+  let contains_illegal_storage_class = not(allow_storage_classes) && specifiers.iter().any(fn(specifier) {
+    match specifier {
+      StorageClassSpecifier(_) => true
+      _ => false
+    }
+  })
+
+  if contains_illegal_storage_class {
+    raise InvalidTypeSpecifier(specifiers)
+  }
+
+  if specifiers.contains(TypeSpecifier(Unsigned)) && specifiers.contains(TypeSpecifier(Long)) {
+    return UnsignedLong
+  }
+
+  if specifiers.contains(TypeSpecifier(Unsigned)) {
+    return UnsignedInt
+  }
+
+  if specifiers.contains(TypeSpecifier(Long)) {
+    return Long
+  }
+
+  Int
+}
+
+fn parse_type(self: Parser, ~allow_storage_classes: Bool) -> Type!ParserError {
+  parse_type_specifiers!(self.parse_specifiers(), ~allow_storage_classes)
 }
 
 fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
@@ -100,17 +136,17 @@ fn precedence_climbing(self: Parser, min_precedence: Int) -> Expr!ParserError {
           match op {
             Assignment(assignment_op) => { // right-associative
               let rhs = self.precedence_climbing!(precedence)
-              lhs = Assignment(~op=assignment_op, ~lhs, ~rhs, ~ty=None)
+              lhs = Assignment(op=assignment_op, ~lhs, ~rhs, ty=None)
             }
             Ternary => {
               let then = self.parse_expr!()
               self.expect!(Colon)
               let otherwise = self.precedence_climbing!(precedence)
-              lhs = Conditional(~cond=lhs, ~then, ~otherwise, ~ty=None)
+              lhs = Conditional(cond=lhs, ~then, ~otherwise, ty=None)
             }
             _ => { // left-associative
               let rhs = self.precedence_climbing!(precedence + 1)
-              lhs = Binary(~op=op, ~lhs, ~rhs, ~ty=None)
+              lhs = Binary(op=op, ~lhs, ~rhs, ty=None)
             }
           }
         } else {
@@ -130,21 +166,29 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
   match token {
     IntLiteral(n) => {
       self.advance()
-      Constant(~const=IntConst(n), ~ty=None)
+      Constant(const=IntConst(n), ty=None)
     }
     LongLiteral(n) => {
       self.advance()
-      Constant(~const=LongConst(n), ~ty=None)
+      Constant(const=LongConst(n), ty=None)
     }
     Identifier(name) => {
       self.advance()
 
       if self.matches(Lparen) {
         let args = self.parse_argument_list!()
-        Call(~name, ~args, ~ty=None)
+        Call(~name, ~args, ty=None)
       } else {
-        Variable(~name, ~ty=None)
+        Variable(~name, ty=None)
       }
+    }
+    UIntLiteral(n) => {
+      self.advance()
+      Constant(const=UnsignedIntConst(n), ty=None)
+    }
+    ULongLiteral(n) => {
+      self.advance()
+      Constant(const=UnsignedLongConst(n), ty=None)
     }
     Lparen => {
       self.advance()
@@ -163,11 +207,11 @@ fn parse_primary_expr(self: Parser) -> Expr!ParserError {
 
 fn parse_cast_expr(self: Parser) -> Expr!ParserError {
   let specifiers = self.parse_specifiers()
-  let target_ty = parse_type_specifiers!(specifiers)
+  let target_ty = parse_type_specifiers!(specifiers, allow_storage_classes=false)
   self.expect!(Rparen)
   let expr = self.parse_factor!()
 
-  Cast(~target_ty, ~expr, ~ty=None)
+  Cast(~target_ty, ~expr, ty=None)
 }
 
 fn parse_argument_list(self: Parser) -> Array[Expr]!ParserError {
@@ -197,11 +241,11 @@ fn parse_postfix_expr(self: Parser) -> Expr!ParserError {
     match self.peek() {
       PlusPlus => {
         self.advance()
-        lhs = Unary(~op=Inc(~is_prefix=false), ~expr=lhs, ~ty=None)
+        lhs = Unary(op=Inc(is_prefix=false), expr=lhs, ty=None)
       }
       MinusMinus => {
         self.advance()
-        lhs = Unary(~op=Dec(~is_prefix=false), ~expr=lhs, ~ty=None)
+        lhs = Unary(op=Dec(is_prefix=false), expr=lhs, ty=None)
       }
       _ => break
     }
@@ -217,27 +261,27 @@ fn parse_factor(self: Parser) -> Expr!ParserError {
     Minus => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Neg, ~expr, ~ty=None)
+      Unary(op=Neg, ~expr, ty=None)
     }
     Tilde => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Complement, ~expr, ~ty=None)
+      Unary(op=Complement, ~expr, ty=None)
     }
     Bang => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Not, ~expr, ~ty=None)
+      Unary(op=Not, ~expr, ty=None)
     }
     PlusPlus => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Inc(~is_prefix=true), ~expr, ~ty=None)
+      Unary(op=Inc(is_prefix=true), ~expr, ty=None)
     }
     MinusMinus => {
       self.advance()
       let expr = self.parse_factor!()
-      Unary(~op=Dec(~is_prefix=true), ~expr, ~ty=None)
+      Unary(op=Dec(is_prefix=true), ~expr, ty=None)
     }
     _ => self.parse_postfix_expr!()
   }
@@ -285,12 +329,12 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
     Break => {
       self.advance()
       self.expect!(Semicolon)
-      Break(~label=None)
+      Break(label=None)
     }
     Continue => {
       self.advance()
       self.expect!(Semicolon)
-      Continue(~label=None)
+      Continue(label=None)
     }
     While => self.parse_while_stmt!()
     Do => self.parse_do_while_stmt!()
@@ -302,7 +346,7 @@ fn parse_stmt(self: Parser) -> Stmt!ParserError {
       if self.lookahead(1) == Colon {
         self.index += 2
         let stmt = self.parse_stmt!()
-        Labeled(~label=ident, ~stmt)
+        Labeled(label=ident, ~stmt)
       } else {
         self.parse_expr_stmt!()
       }
@@ -338,7 +382,7 @@ fn parse_while_stmt(self: Parser) -> Stmt!ParserError {
   self.expect!(Rparen)
   let body = self.parse_stmt!()
 
-  While(~cond, ~body, ~label=None)
+  While(~cond, ~body, label=None)
 }
 
 fn parse_do_while_stmt(self: Parser) -> Stmt!ParserError {
@@ -350,7 +394,7 @@ fn parse_do_while_stmt(self: Parser) -> Stmt!ParserError {
   self.expect!(Rparen)
   self.expect!(Semicolon)
 
-  DoWhile(~body, ~cond, ~label=None)
+  DoWhile(~body, ~cond, label=None)
 }
 
 fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
@@ -386,7 +430,7 @@ fn parse_for_stmt(self: Parser) -> Stmt!ParserError {
 
   let body = self.parse_stmt!()
 
-  For(~init, ~cond, ~post, ~body, ~label=None)
+  For(~init, ~cond, ~post, ~body, label=None)
 }
 
 fn parse_case_stmt(self: Parser) -> Stmt!ParserError {
@@ -413,7 +457,7 @@ fn parse_switch_stmt(self: Parser) -> Stmt!ParserError {
   self.expect!(Rparen)
   let body = self.parse_stmt!()
 
-  Switch(~expr, ~body, ~label=None, ~cases_count=0)
+  Switch(~expr, ~body, label=None, cases_count=0)
 }
 
 fn parse_block_item(self: Parser) -> BlockItem!ParserError {
@@ -424,10 +468,14 @@ fn parse_block_item(self: Parser) -> BlockItem!ParserError {
   }
 }
 
+enum TypeSpecifier {
+  Int; Long; Unsigned; Signed
+} derive(Eq, Hash, Show)
+
 enum Specifier {
-  TypeSpecifier(Type)
+  TypeSpecifier(TypeSpecifier)
   StorageClassSpecifier(StorageClass)
-}
+} derive(Eq, Hash, Show)
 
 fn parse_specifiers(self: Parser) -> Array[Specifier] {
   let specifiers = []
@@ -441,6 +489,14 @@ fn parse_specifiers(self: Parser) -> Array[Specifier] {
       Long => {
         self.advance()
         specifiers.push(TypeSpecifier(Long))
+      }
+      Unsigned => {
+        self.advance()
+        specifiers.push(TypeSpecifier(Unsigned))
+      }
+      Signed => {
+        self.advance()
+        specifiers.push(TypeSpecifier(Signed))
       }
       Extern => {
         self.advance()
@@ -472,7 +528,7 @@ fn parse_type_and_storage_class(specifiers: Array[Specifier]) -> (Type, StorageC
     raise InvalidStorageClassSpecifier
   }
 
-  let ty = parse_type_specifiers!(type_specifiers)
+  let ty = parse_type_specifiers!(type_specifiers, allow_storage_classes=true)
   let storage_class = if storage_classes.length() == 1 {
     Some(storage_classes[0])
   } else {
@@ -514,7 +570,7 @@ fn parse_param_list(self: Parser) -> Array[FunctionParam]!ParserError {
     let params: Array[FunctionParam] = []
     
     while true {
-      let ty = self.parse_type!()
+      let ty = self.parse_type!(allow_storage_classes=false)
       let name = self.parse_identifier!()
       params.push({ ty, name })
 

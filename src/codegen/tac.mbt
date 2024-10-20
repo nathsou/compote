@@ -8,6 +8,7 @@ pub enum TacInst {
   Return(TacValue)
   SignExtend(~src: TacValue, ~dst: TacValue)
   Truncate(~src: TacValue, ~dst: TacValue)
+  ZeroExtend(~src: TacValue, ~dst: TacValue)
   Unary(~op: @parse.UnaryOp, ~src: TacValue, ~dst: TacValue)
   Binary(~op: @parse.BinaryOp, ~lhs: TacValue, ~rhs: TacValue, ~dst: TacValue)
   Copy(~src: TacValue, ~dst: TacValue)
@@ -41,7 +42,7 @@ pub impl Show for TacProgram with output(self, logger: Logger) {
         logger.write_string("function ")
         logger.write_string(function.name)
         logger.write_string("(")
-        logger.write_string(function.params.join(", "))
+        logger.write_string(String::concat(function.params, separator=", "))
         logger.write_string(") {\n")
         
         for inst in function.body {
@@ -52,7 +53,7 @@ pub impl Show for TacProgram with output(self, logger: Logger) {
         
         logger.write_string("}\n")
       }
-      StaticVar(~name, ~global=_, ~init, ~ty=_) => {
+      StaticVar(~name, global=_, ~init, ty=_) => {
         logger.write_string("static \{name} = \{init}\n")
       }
     }
