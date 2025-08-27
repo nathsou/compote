@@ -18,16 +18,16 @@ fn round_aligned(alignment: Int64, n: Int64) -> Int64 {
   }
 }
 
-fn rewrite_operand(self: ReplacePseudoRegsPass, operand: AsmOperand) -> AsmOperand! {
+fn ReplacePseudoRegsPass::rewrite_operand(self: ReplacePseudoRegsPass, operand: AsmOperand) -> AsmOperand raise {
   match operand {
     Pseudo(name) => {
       if self.symbols.is_symbol_static(name) {
         Data(name)
       } else {
-        let offset = match self.pseudo_reg_offsets[name] {
+        let offset = match self.pseudo_reg_offsets.get(name) {
           Some(offset) => offset
           None => {
-            let ty = self.symbols.get_symbol_ty!(name)
+            let ty = self.symbols.get_symbol_ty(name)
             let size = ty.size()
             let alignment = ty.alignment()
             self.stack_offset = round_aligned(alignment, self.stack_offset - size)
@@ -44,55 +44,55 @@ fn rewrite_operand(self: ReplacePseudoRegsPass, operand: AsmOperand) -> AsmOpera
   }
 }
 
-fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst! {
+fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
   match inst {
-    Mov(~src, ~dst, ~ty) => {
-      let src = self.rewrite_operand!(src)
-      let dst = self.rewrite_operand!(dst)
-      Mov(~src, ~dst, ~ty)
+    Mov(src~, dst~, ty~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Mov(src~, dst~, ty~)
     }
-    Movsx(~src, ~dst) => {
-      let src = self.rewrite_operand!(src)
-      let dst = self.rewrite_operand!(dst)
-      Movsx(~src, ~dst)
+    Movsx(src~, dst~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Movsx(src~, dst~)
     }
-    MovZeroExtend(~src, ~dst) => {
-      let src = self.rewrite_operand!(src)
-      let dst = self.rewrite_operand!(dst)
-      MovZeroExtend(~src, ~dst)
+    MovZeroExtend(src~, dst~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      MovZeroExtend(src~, dst~)
     }
-    Unary(~op, ~dst, ~ty) => {
-      let dst = self.rewrite_operand!(dst)
-      Unary(~op, ~dst, ~ty)
+    Unary(op~, dst~, ty~) => {
+      let dst = self.rewrite_operand(dst)
+      Unary(op~, dst~, ty~)
     }
-    Binary(~op, ~src, ~dst, ~ty) => {
-      let src = self.rewrite_operand!(src)
-      let dst = self.rewrite_operand!(dst)
-      Binary(~op, ~src, ~dst, ~ty)
+    Binary(op~, src~, dst~, ty~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Binary(op~, src~, dst~, ty~)
     }
-    Cmp(~src, ~dst, ~ty) => {
-      let src = self.rewrite_operand!(src)
-      let dst = self.rewrite_operand!(dst)
-      Cmp(~src, ~dst, ~ty)
+    Cmp(src~, dst~, ty~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Cmp(src~, dst~, ty~)
     }
-    IDiv(~src, ~ty) => {
-      let src = self.rewrite_operand!(src)
-      IDiv(~src, ~ty)
+    IDiv(src~, ty~) => {
+      let src = self.rewrite_operand(src)
+      IDiv(src~, ty~)
     }
-    Div(~src, ~ty) => {
-      let src = self.rewrite_operand!(src)
-      Div(~src, ~ty)
+    Div(src~, ty~) => {
+      let src = self.rewrite_operand(src)
+      Div(src~, ty~)
     }
-    Cdq(~ty) => Cdq(~ty)
+    Cdq(ty~) => Cdq(ty~)
     Jmp(target) => Jmp(target)
-    JmpCond(~cond, ~target) => JmpCond(~cond, ~target)
-    SetCond(~cond, ~dst) => {
-      let dst = self.rewrite_operand!(dst)
-      SetCond(~cond, ~dst)
+    JmpCond(cond~, target~) => JmpCond(cond~, target~)
+    SetCond(cond~, dst~) => {
+      let dst = self.rewrite_operand(dst)
+      SetCond(cond~, dst~)
     }
     Label(name) => Label(name)
     Push(operand) => {
-      let operand = self.rewrite_operand!(operand)
+      let operand = self.rewrite_operand(operand)
       Push(operand)
     }
     Call(name) => Call(name)
@@ -100,11 +100,11 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst! {
   }
 }
 
-pub fn run(self: ReplacePseudoRegsPass, insts: Array[AsmInst]) -> Array[AsmInst]! {
+pub fn run(self: ReplacePseudoRegsPass, insts: Array[AsmInst]) -> Array[AsmInst] raise {
   let new_insts = []
 
   for inst in insts {
-    new_insts.push(self.rewrite_inst!(inst))
+    new_insts.push(self.rewrite_inst(inst))
   }
 
   new_insts

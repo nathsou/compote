@@ -2,5 +2,6 @@
     "import": [
       "nathsou/compote/parse",
       "nathsou/compote/validate"
-    ]
+    ],
+    "warn-list": "-6"
 }

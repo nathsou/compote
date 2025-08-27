@@ -6,7 +6,7 @@ use std::env;
 use clap::{Arg, App};
 use wasmtime::*;
 
-const CC: &str = "clang";
+const CC: &str = "gcc";
 
 // Enums for driver stages and operating systems
 #[derive(PartialEq)]

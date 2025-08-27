@@ -3,19 +3,19 @@ pub struct Scope[T] {
   parent: Scope[T]?
 }
 
-pub type! ScopeError {
+pub suberror ScopeError {
   MemberAlreadyDeclared
 }
 
-pub fn Scope::new[T]() -> Scope[T] {
+pub fn[T] Scope::new() -> Scope[T] {
   { members: {}, parent: None }
 }
 
-pub fn child[T](self: Scope[T]) -> Scope[T] {
+pub fn[T] child(self: Scope[T]) -> Scope[T] {
   { members: {}, parent: Some(self) }
 }
 
-pub fn declare[T](self: Scope[T], name: String, value: T) -> Unit!ScopeError {
+pub fn[T] declare(self: Scope[T], name: String, value: T) -> Unit raise ScopeError {
   if self.members.contains(name) {
     raise MemberAlreadyDeclared
   }
@@ -23,22 +23,22 @@ pub fn declare[T](self: Scope[T], name: String, value: T) -> Unit!ScopeError {
   self.members[name] = value
 }
 
-pub fn declare_shadowing[T](self: Scope[T], name: String, value: T) -> Unit {
+pub fn[T] declare_shadowing(self: Scope[T], name: String, value: T) -> Unit {
   self.members[name] = value
 }
 
-pub fn contains[T](self: Scope[T], name: String) -> Bool {
+pub fn[T] contains(self: Scope[T], name: String) -> Bool {
   self.members.contains(name) || (match self.parent {
     Some(parent) => parent.contains(name)
     None => false
   })
 }
 
-pub fn contains_local[T](self: Scope[T], name: String) -> Bool {
+pub fn[T] contains_local(self: Scope[T], name: String) -> Bool {
   self.members.contains(name)
 }
 
-pub fn resolve[T](self: Scope[T], name: String) -> T? {
+pub fn[T] resolve(self: Scope[T], name: String) -> T? {
   match self.members.get(name) {
     Some(value) => Some(value)
     None => match self.parent {

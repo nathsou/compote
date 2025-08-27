@@ -2,10 +2,10 @@
 pub struct PrettyPrinter {
   mut indent: Int
   mut _spaces: String
-  logger: Logger
+  logger: &Logger
 }
 
-pub fn PrettyPrinter::new(logger: Logger) -> PrettyPrinter {
+pub fn PrettyPrinter::new(logger: &Logger) -> PrettyPrinter {
   { indent: 0, _spaces: "", logger }
 }
 
@@ -30,17 +30,17 @@ fn write_string(self: PrettyPrinter, s: String) -> Unit {
   self.logger.write_string(s)
 }
 
-pub impl Show for Type with output(self, logger: Logger) {
+pub impl Show for Type with output(self, logger: &Logger) {
   logger.write_string(match self {
     Int => "int"
     Long => "long"
     UnsignedInt => "unsigned int"
     UnsignedLong => "unsigned long"
-    FunType(~params, ~ret) => "fun(" + String::concat(params.map(Show::to_string), separator=", ") + ") -> " + Show::to_string(ret)
+    FunType(params~, ret~) => "fun(" + params.map(Show::to_string).join(", ") + ") -> " + Show::to_string(ret)
   })
 }
 
-pub impl Show for UnaryOp with output(self, logger: Logger) {
+pub impl Show for UnaryOp with output(self, logger: &Logger) {
   logger.write_string(match self {
     Neg => "-"
     Complement => "~"
@@ -50,7 +50,7 @@ pub impl Show for UnaryOp with output(self, logger: Logger) {
   })
 }
 
-pub impl Show for AssignmentOp with output(self, logger: Logger) {
+pub impl Show for AssignmentOp with output(self, logger: &Logger) {
   logger.write_string(match self {
     Assign => "="
     AssignAdd => "+="
@@ -66,7 +66,7 @@ pub impl Show for AssignmentOp with output(self, logger: Logger) {
   })
 }
 
-pub impl Show for BinaryOp with output(self, logger: Logger) {
+pub impl Show for BinaryOp with output(self, logger: &Logger) {
   logger.write_string(match self {
     Add => "+"
     Sub => "-"
@@ -91,14 +91,14 @@ pub impl Show for BinaryOp with output(self, logger: Logger) {
   })
 }
 
-pub impl Show for StorageClass with output(self, logger: Logger) {
+pub impl Show for StorageClass with output(self, logger: &Logger) {
   logger.write_string(match self {
     Static => "static"
     Extern => "extern"
   })
 }
 
-pub impl Show for Constant with output(self, logger: Logger) {
+pub impl Show for Constant with output(self, logger: &Logger) {
   logger.write_string(match self {
     IntConst(n) => n.to_string()
     LongConst(n) => n.to_string() + "L"
@@ -109,20 +109,20 @@ pub impl Show for Constant with output(self, logger: Logger) {
 
 pub fn show_expr(expr: Expr) -> String {
   match expr {
-    Constant(const=n, ty=_) => Show::to_string(n)
-    Variable(~name, ty=_) => name
-    Cast(~target_ty, ~expr, ty=_) => "((" + Show::to_string(target_ty) + ")" + show_expr(expr) + ")"
-    Unary(~op, ~expr, ty=_) => {
+    Constant(val=n, ty=_) => Show::to_string(n)
+    Variable(name~, ty=_) => name
+    Cast(target_ty~, expr~, ty=_) => "((" + Show::to_string(target_ty) + ")" + show_expr(expr) + ")"
+    Unary(op~, expr~, ty=_) => {
       match op {
         Inc(is_prefix=false) => "(" + show_expr(expr) + ")++"
         Dec(is_prefix=true) => "(" + show_expr(expr)
         _ => Show::to_string(op) + "(" + show_expr(expr) + ")"
       }
     }
-    Binary(~op, ~lhs, ~rhs, ty=_) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
-    Assignment(~op, ~lhs, ~rhs, ty=_) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
-    Conditional(~cond, ~then, ~otherwise, ty=_) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
-    Call(~name, ~args, ty=_) => name + "(" + (args.map(show_expr) |> String::concat(separator=", ")) + ")"
+    Binary(op~, lhs~, rhs~, ty=_) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
+    Assignment(op~, lhs~, rhs~, ty=_) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
+    Conditional(cond~, then~, otherwise~, ty=_) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
+    Call(name~, args~, ty=_) => name + "(" + (args.map(show_expr).join(", ")) + ")"
   }
 }
 
@@ -174,7 +174,7 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
     Expression(expr) => {
       self.emit(show_expr(expr) + ";")
     }
-    If(~cond, ~then, ~otherwise) => {
+    If(cond~, then~, otherwise~) => {
       self.emit("if (" + show_expr(cond) + ") ")
       self.show_stmt(then)
       match otherwise {
@@ -192,7 +192,7 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
       self.dedent()
       self.emit("}")
     }
-    Labeled(~label, ~stmt) => {
+    Labeled(label~, stmt~) => {
       self.emit(label + ":")
       self.indent()
       self.show_stmt(stmt)
@@ -201,7 +201,7 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
     Goto(label) => {
       self.emit("goto " + label + ";")
     }
-    Break(~label) => {
+    Break(label~) => {
       match label {
         Some(label) => {
           self.emit("break " + label + ";")
@@ -211,7 +211,7 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
         }
       }
     }
-    Continue(~label) => {
+    Continue(label~) => {
       match label {
         Some(label) => {
           self.emit("continue " + label + ";")
@@ -221,16 +221,16 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
         }
       }
     }
-    While(~cond, ~body, label=_) => {
+    While(cond~, body~, label=_) => {
       self.emit("while (" + show_expr(cond) + ") ")
       self.show_stmt(body)
     }
-    DoWhile(~body, ~cond, label=_) => {
+    DoWhile(body~, cond~, label=_) => {
       self.emit("do ")
       self.show_stmt(body)
       self.emit("while (" + show_expr(cond) + ");")
     }
-    For(~init, ~cond, ~post, ~body, label=_) => {
+    For(init~, cond~, post~, body~, label=_) => {
       self.emit("for (")
 
       match init {
@@ -264,17 +264,17 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
       self.write_string(") ")
       self.show_stmt(body)
     }
-    Switch(~expr, ~body, label=_, cases_count=_) => {
+    Switch(expr~, body~, label=_, cases_count=_) => {
       self.emit("switch (" + show_expr(expr) + ")")
       self.show_stmt(body)
     }
-    Case(~expr, ~body) => {
+    Case(expr~, body~) => {
       self.emit("case " + show_expr(expr) + ":")
       self.indent()
       self.show_stmt(body)
       self.dedent()
     }
-    Default(~body) => {
+    Default(body~) => {
       self.emit("default:")
       self.indent()
       self.show_stmt(body)
@@ -294,7 +294,7 @@ pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
 
   let params = func.params.map(fn(param) {
     Show::to_string(param.ty) + " " + param.name
-  }) |> String::concat(separator=", ")
+  }).join(", ")
 
   self.emit(storage_class + Show::to_string(func.return_ty) + " " + func.name + "(" + params + ")" + (if func.body.is_empty() {
     ";"
@@ -321,16 +321,16 @@ pub fn show_program(self: PrettyPrinter, program: Program) -> Unit {
   }
 }
 
-pub impl Show for Expr with output(self, logger: Logger) {
+pub impl Show for Expr with output(self, logger: &Logger) {
   logger.write_string(show_expr(self))
 }
 
-pub impl Show for FunctionDecl with output(self, logger: Logger) {
+pub impl Show for FunctionDecl with output(self, logger: &Logger) {
   let printer = PrettyPrinter::new(logger)
   printer.show_function_decl(self)
 }
 
-pub impl Show for Program with output(self, logger: Logger) {
+pub impl Show for Program with output(self, logger: &Logger) {
   let printer = PrettyPrinter::new(logger)
   printer.show_program(self)
 }
