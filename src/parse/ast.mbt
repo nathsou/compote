@@ -1,76 +1,76 @@
 
-pub enum Type {
+pub(all) enum Type {
   Int
   Long
   UnsignedInt
   UnsignedLong
-  FunType(~params: Array[Type], ~ret: Type)
+  FunType(params~: Array[Type], ret~: Type)
 } derive(Eq)
 
-pub enum Constant {
+pub(all) enum Constant {
   IntConst(Int)
   LongConst(Int64)
   UnsignedIntConst(UInt)
   UnsignedLongConst(UInt64)
 } derive (Eq, Hash)
 
-pub enum StorageClass {
+pub(all) enum StorageClass {
   Static; Extern
 } derive(Eq, Hash)
 
-pub enum Expr {
-  Constant(~const: Constant, ~ty: Type?)
-  Variable(~name: String, ~ty: Type?)
-  Cast(~target_ty: Type, ~expr: Expr, ~ty: Type?)
-  Unary(~op: UnaryOp, ~expr: Expr, ~ty: Type?)
-  Binary(~op: BinaryOp, ~lhs: Expr, ~rhs: Expr, ~ty: Type?)
-  Assignment(~op: AssignmentOp, ~lhs: Expr, ~rhs: Expr, ~ty: Type?)
-  Conditional(~cond: Expr, ~then: Expr, ~otherwise: Expr, ~ty: Type?)
-  Call(~name: String, ~args: Array[Expr], ~ty: Type?)
+pub(all) enum Expr {
+  Constant(val~: Constant, ty~: Type?)
+  Variable(name~: String, ty~: Type?)
+  Cast(target_ty~: Type, expr~: Expr, ty~: Type?)
+  Unary(op~: UnaryOp, expr~: Expr, ty~: Type?)
+  Binary(op~: BinaryOp, lhs~: Expr, rhs~: Expr, ty~: Type?)
+  Assignment(op~: AssignmentOp, lhs~: Expr, rhs~: Expr, ty~: Type?)
+  Conditional(cond~: Expr, then~: Expr, otherwise~: Expr, ty~: Type?)
+  Call(name~: String, args~: Array[Expr], ty~: Type?)
 }
 
-pub enum Stmt {
+pub(all) enum Stmt {
   Return(Expr)
   Expression(Expr)
-  If(~cond: Expr, ~then: Stmt, ~otherwise: Stmt?)
-  Labeled(~label: String, ~stmt: Stmt)
+  If(cond~: Expr, then~: Stmt, otherwise~: Stmt?)
+  Labeled(label~: String, stmt~: Stmt)
   Goto(String)
   Compound(Array[BlockItem])
-  Break(~label: String?)
-  Continue(~label: String?)
-  While(~cond: Expr, ~body: Stmt, ~label: String?)
-  DoWhile(~body: Stmt, ~cond: Expr, ~label: String?)
-  For(~init: ForInit, ~cond:  Expr?, ~post: Expr?, ~body: Stmt, ~label: String?)
-  Switch(~expr: Expr, ~body: Stmt, ~label: String?, ~cases_count: Int) // cases count includes default
-  Case(~expr: Expr, ~body: Stmt)
-  Default(~body: Stmt)
+  Break(label~: String?)
+  Continue(label~: String?)
+  While(cond~: Expr, body~: Stmt, label~: String?)
+  DoWhile(body~: Stmt, cond~: Expr, label~: String?)
+  For(init~: ForInit, cond~:  Expr?, post~: Expr?, body~: Stmt, label~: String?)
+  Switch(expr~: Expr, body~: Stmt, label~: String?, cases_count~: Int) // cases count includes default
+  Case(expr~: Expr, body~: Stmt)
+  Default(body~: Stmt)
   Null // for empty statements (just a semicolon)
 }
 
-pub enum BlockItem {
+pub(all) enum BlockItem {
   Stmt(Stmt)
   Decl(Decl)
 }
 
-pub enum ForInit {
+pub(all) enum ForInit {
   InitEmpty
   InitDecl(VariableDecl)
   InitExpr(Expr)
 } derive(Show)
 
-pub struct VariableDecl {
+pub(all) struct VariableDecl {
   ty: Type
   name: String
   value: Expr?
   storage_class: StorageClass?
 } derive(Show)
 
-pub struct FunctionParam {
+pub(all) struct FunctionParam {
   ty: Type
   name: String
 } derive(Show)
 
-pub struct FunctionDecl {
+pub(all) struct FunctionDecl {
   return_ty: Type
   name: String
   params: Array[FunctionParam]
@@ -78,20 +78,20 @@ pub struct FunctionDecl {
   storage_class: StorageClass?
 }
 
-pub enum Decl {
+pub(all) enum Decl {
   VarDecl(VariableDecl)
   FunDecl(FunctionDecl)
 } derive(Show)
 
-pub struct Program {
+pub(all) struct Program {
   decls: Array[Decl]
 }
 
-pub enum UnaryOp {
-  Neg; Complement; Not; Inc(~is_prefix: Bool); Dec(~is_prefix: Bool)
+pub(all) enum UnaryOp {
+  Neg; Complement; Not; Inc(is_prefix~: Bool); Dec(is_prefix~: Bool)
 } derive(Eq)
 
-pub enum BinaryOp {
+pub(all) enum BinaryOp {
   Add; Sub; Mul; Div; Rem
   BitwiseAnd; BitwiseOr; BitwiseXor;
   ShiftLeft; ShiftRight
@@ -101,7 +101,7 @@ pub enum BinaryOp {
   Assignment(AssignmentOp)
 } derive(Eq)
 
-pub enum AssignmentOp {
+pub(all) enum AssignmentOp {
   Assign; AssignAdd; AssignSub; AssignMul; AssignDiv; AssignRem
   AssignAnd; AssignOr; AssignXor; AssignShl; AssignShr
 } derive(Eq)
@@ -128,20 +128,20 @@ pub fn to_type(self: FunctionDecl) -> Type {
   FunType(params=self.params.map(fn(param) { param.ty }), ret=self.return_ty)
 }
 
-pub fn ty(self: Expr) -> Type {
+pub fn Expr::ty(self: Expr) -> Type {
   (match self {
-    Constant(const=_, ~ty) => ty
-    Variable(name=_, ~ty) => ty
-    Cast(target_ty=_, expr=_, ~ty) => ty
-    Unary(op=_, expr=_, ~ty) => ty
-    Binary(op=_, lhs=_, rhs=_, ~ty) => ty
-    Assignment(op=_, lhs=_, rhs=_, ~ty) => ty
-    Conditional(cond=_, then=_, otherwise=_, ~ty) => ty
-    Call(name=_, args=_, ~ty) => ty
+    Constant(val=_, ty~) => ty
+    Variable(name=_, ty~) => ty
+    Cast(target_ty=_, expr=_, ty~) => ty
+    Unary(op=_, expr=_, ty~) => ty
+    Binary(op=_, lhs=_, rhs=_, ty~) => ty
+    Assignment(op=_, lhs=_, rhs=_, ty~) => ty
+    Conditional(cond=_, then=_, otherwise=_, ty~) => ty
+    Call(name=_, args=_, ty~) => ty
   }).unwrap()
 }
 
-pub fn ty(self: Constant) -> Type {
+pub fn Constant::ty(self: Constant) -> Type {
   match self {
     IntConst(_) => Int
     LongConst(_) => Long
@@ -150,7 +150,7 @@ pub fn ty(self: Constant) -> Type {
   }
 }
 
-pub fn byte_size(self: Type) -> UInt {
+pub fn Type::byte_size(self: Type) -> UInt {
   match self {
     Int | UnsignedInt => 4
     Long | UnsignedLong => 8
@@ -158,15 +158,15 @@ pub fn byte_size(self: Type) -> UInt {
   }
 }
 
-pub fn is_signed(self: Type) -> Bool {
+pub fn Type::is_signed(self: Type) -> Bool {
   match self {
     Int | Long => true
     UnsignedInt | UnsignedLong | FunType(_) => false
   }
 }
 
-pub fn fit_const_to_type(const: Constant, ty: Type) -> Constant! {
-  match (const, ty) {
+pub fn Constant::fit_val_to_type(self: Constant, ty: Type) -> Constant raise {
+  match (self, ty) {
     (IntConst(n), Int) => IntConst(n)
     (IntConst(n), Long) => LongConst(n.to_int64())
     (IntConst(n), UnsignedInt) => UnsignedIntConst(n.reinterpret_as_uint())
@@ -183,6 +183,6 @@ pub fn fit_const_to_type(const: Constant, ty: Type) -> Constant! {
     (UnsignedLongConst(n), UnsignedLong) => UnsignedLongConst(n)
     (UnsignedLongConst(n), Long) => LongConst(n.to_int64())
     (UnsignedLongConst(n), Int) => IntConst(n.to_int())
-    (_, FunType(_)) => raise Failure("Invalid constant type conversion")
+    (_, FunType(_)) => raise Failure("Invalid valant type conversion")
   }
 }

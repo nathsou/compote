@@ -6,7 +6,7 @@ pub struct Emitter {
   mut indentation: Int
 }
 
-pub type! EmitterError {
+pub suberror EmitterError {
   UnexpectedPseudoReg(String)
   Unreachable(String)
 } derive(Show)
@@ -57,11 +57,11 @@ fn repeat_string(str: String, n: Int) -> String {
   result
 }
 
-fn emit(self: Emitter, line: String) -> Unit {
+fn Emitter::emit(self: Emitter, line: String) -> Unit {
   self.lines.push(repeat_string("  ", self.indentation) + line)
 }
 
-fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String!EmitterError {
+fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String raise EmitterError {
   match self {
     Imm(n) => "$\{n}"
     Reg(reg) => match reg {
@@ -116,30 +116,30 @@ fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String!
         Quad => "%rsp"
       }
     }
-    RegSize(reg, size) => Reg(reg).asm_reg_size!(size, os)
+    RegSize(reg, size) => Reg(reg).asm_reg_size(size, os)
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
     Data(name) => os.symbol(name) + "(%rip)"
   }
 }
 
-fn asm(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String!EmitterError {
+fn asm(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String raise EmitterError {
   let size = match ty {
     LongWord => Long
     QuadWord => Quad
   }
 
-  self.asm_reg_size!(size, os)
+  self.asm_reg_size(size, os)
 }
 
-fn asm(self: AsmUnaryOp) -> String {
+fn AsmUnaryOp::asm(self: AsmUnaryOp) -> String {
   match self {
     Neg => "neg"
     BitwiseNot => "not"
   }
 }
 
-fn asm(self: AsmBinaryOp) -> String {
+fn AsmBinaryOp::asm(self: AsmBinaryOp) -> String {
   match self {
     Add => "add"
     Sub => "sub"
@@ -169,36 +169,36 @@ fn suffix(self: CondCode) -> String {
   }
 }
 
-fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
+fn emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
   match inst {
-    Mov(~src, ~dst, ~ty) => {
-      self.emit("mov\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
+    Mov(src~, dst~, ty~) => {
+      self.emit("mov\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
     }
-    Movsx(~src, ~dst) => {
-      self.emit("movslq \{src.asm!(LongWord, self.os)}, \{dst.asm!(QuadWord, self.os)}")
+    Movsx(src~, dst~) => {
+      self.emit("movslq \{src.asm(LongWord, self.os)}, \{dst.asm(QuadWord, self.os)}")
     }
     MovZeroExtend(_) => {
       raise EmitterError::Unreachable("MovZeroExtend should have been removed by the ReplacePseudoRegs pass")
     }
-    Unary(~op, ~dst, ~ty) => {
-      self.emit("\{op.asm()}\{ty.suffix()} \{dst.asm!(ty, self.os)}")
+    Unary(op~, dst~, ty~) => {
+      self.emit("\{op.asm()}\{ty.suffix()} \{dst.asm(ty, self.os)}")
     }
-    Binary(op=Shl | Sal as op, ~src, ~dst, ~ty) => {
-      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
+    Binary(op=Shl | Sal as op, src~, dst~, ty~) => {
+      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
     }
-    Binary(~op, ~src, ~dst, ~ty) => {
-      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
+    Binary(op~, src~, dst~, ty~) => {
+      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
     }
-    Cmp(~src, ~dst, ~ty) => {
-      self.emit("cmp\{ty.suffix()} \{src.asm!(ty, self.os)}, \{dst.asm!(ty, self.os)}")
+    Cmp(src~, dst~, ty~) => {
+      self.emit("cmp\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
     }
-    IDiv(~src, ~ty) => {
-      self.emit("idiv\{ty.suffix()} \{src.asm!(ty, self.os)}")
+    IDiv(src~, ty~) => {
+      self.emit("idiv\{ty.suffix()} \{src.asm(ty, self.os)}")
     }
-    Div(~src, ~ty) => {
-      self.emit("div\{ty.suffix()} \{src.asm!(ty, self.os)}")
+    Div(src~, ty~) => {
+      self.emit("div\{ty.suffix()} \{src.asm(ty, self.os)}")
     }
-    Cdq(~ty) => {
+    Cdq(ty~) => {
       match ty {
         LongWord => self.emit("cdq")
         QuadWord => self.emit("cqo")
@@ -207,17 +207,17 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
     Jmp(target) => {
       self.emit("jmp \{self.os.label(target)}")
     }
-    JmpCond(~cond, ~target) => {
+    JmpCond(cond~, target~) => {
       self.emit("j\{cond.suffix()} \{self.os.label(target)}")
     }
-    SetCond(~cond, ~dst) => {
-      self.emit("set\{cond.suffix()} \{dst.asm_reg_size!(Byte, self.os)}")
+    SetCond(cond~, dst~) => {
+      self.emit("set\{cond.suffix()} \{dst.asm_reg_size(Byte, self.os)}")
     }
     Label(name) => {
       self.emit(self.os.label(name) + ":")
     }
     Push(operand) => {
-      self.emit("pushq \{operand.asm!(QuadWord, self.os)}")
+      self.emit("pushq \{operand.asm(QuadWord, self.os)}")
     }
     Call(label) => {
       let suffix = match self.os {
@@ -242,7 +242,7 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit!EmitterError {
   }
 }
 
-fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit!EmitterError {
+fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit raise EmitterError {
   let name = self.os.symbol(f.name)
 
   if f.global {
@@ -258,7 +258,7 @@ fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit!EmitterError {
   self.emit("movq %rsp, %rbp")
 
   for inst in f.body {
-    self.emit_inst!(inst)
+    self.emit_inst(inst)
   }
 
   self.indentation -= 1
@@ -303,13 +303,13 @@ fn emit_static_variable_def(self: Emitter, var: AsmStaticVarDef) -> Unit {
   }
 }
 
-pub fn emit_program(self: Emitter, program: AsmProgram) -> Unit!EmitterError {
+pub fn emit_program(self: Emitter, program: AsmProgram) -> Unit raise EmitterError {
   for v in program.static_vars {
     self.emit_static_variable_def(v)
   }
 
   for f in program.functions {
-    self.emit_function_def!(f)
+    self.emit_function_def(f)
   }
 
   if self.os == Linux {
@@ -317,7 +317,7 @@ pub fn emit_program(self: Emitter, program: AsmProgram) -> Unit!EmitterError {
   }
 }
 
-pub impl Show for Emitter with output(self, logger: Logger) {
+pub impl Show for Emitter with output(self, logger: &Logger) {
   for line in self.lines {
     logger.write_string(line)
     logger.write_char('\n')

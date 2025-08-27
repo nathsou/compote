@@ -5,7 +5,7 @@ pub type! ValidationError {
   SwitchAnalysis(SwitchResolutionError)
 } derive(Show)
 
-pub fn validated(prog: @parse.Program) -> (@parse.Program, Map[String, SymbolTableEntry])!ValidationError {
+pub fn validated(prog: @parse.Program) -> (@parse.Program, Map[String, SymbolTableEntry]) raise ValidationError {
   let resolver = NameResolutionPass::new()
 
   match resolver.resolved?(prog) {

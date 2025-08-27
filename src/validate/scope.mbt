@@ -15,7 +15,7 @@ pub fn child[T](self: Scope[T]) -> Scope[T] {
   { members: {}, parent: Some(self) }
 }
 
-pub fn declare[T](self: Scope[T], name: String, value: T) -> Unit!ScopeError {
+pub fn declare[T](self: Scope[T], name: String, value: T) -> Unit raise ScopeError {
   if self.members.contains(name) {
     raise MemberAlreadyDeclared
   }

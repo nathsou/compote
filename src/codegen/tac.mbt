@@ -6,17 +6,17 @@ pub enum TacValue {
 
 pub enum TacInst {
   Return(TacValue)
-  SignExtend(~src: TacValue, ~dst: TacValue)
-  Truncate(~src: TacValue, ~dst: TacValue)
-  ZeroExtend(~src: TacValue, ~dst: TacValue)
-  Unary(~op: @parse.UnaryOp, ~src: TacValue, ~dst: TacValue)
-  Binary(~op: @parse.BinaryOp, ~lhs: TacValue, ~rhs: TacValue, ~dst: TacValue)
-  Copy(~src: TacValue, ~dst: TacValue)
+  SignExtend(src~: TacValue, dst~: TacValue)
+  Truncate(src~: TacValue, dst~: TacValue)
+  ZeroExtend(src~: TacValue, dst~: TacValue)
+  Unary(op~: @parse.UnaryOp, src~: TacValue, dst~: TacValue)
+  Binary(op~: @parse.BinaryOp, lhs~: TacValue, rhs~: TacValue, dst~: TacValue)
+  Copy(src~: TacValue, dst~: TacValue)
   Jump(String)
-  JumpIfZero(~cond: TacValue, ~target: String)
-  JumpIfNotZero(~cond: TacValue, ~target: String)
+  JumpIfZero(cond~: TacValue, target~: String)
+  JumpIfNotZero(cond~: TacValue, target~: String)
   Label(String)
-  Call(~name: String, ~args: Array[TacValue], ~dst: TacValue)
+  Call(name~: String, args~: Array[TacValue], dst~: TacValue)
 } derive(Show)
 
 pub struct TacFunctionDef {
@@ -28,14 +28,14 @@ pub struct TacFunctionDef {
 
 pub enum TacTopLevel {
   Function(TacFunctionDef)
-  StaticVar(~name: String, ~global: Bool, ~init: @validate.StaticInit, ~ty: @parse.Type)
+  StaticVar(name~: String, global~: Bool, init~: @validate.StaticInit, ty~: @parse.Type)
 } derive(Show)
 
 pub struct TacProgram {
   top_level: Array[TacTopLevel]
 }
 
-pub impl Show for TacProgram with output(self, logger: Logger) {
+pub impl Show for TacProgram with output(self, logger: &Logger) {
   for top_level in self.top_level {
     match top_level {
       Function(function) => {
@@ -53,7 +53,7 @@ pub impl Show for TacProgram with output(self, logger: Logger) {
         
         logger.write_string("}\n")
       }
-      StaticVar(~name, global=_, ~init, ty=_) => {
+      StaticVar(name~, global=_, init~, ty=_) => {
         logger.write_string("static \{name} = \{init}\n")
       }
     }
