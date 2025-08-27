@@ -27,7 +27,7 @@ fn read_source_file() -> String {
 fn lex_stage(source: String) -> Array[@parse.Token] raise CompilerError {
   let lexer = @parse.Lexer::new(source)
 
-  match (try? lexer.lex()) {
+  match (try? lexer.tokenize()) {
     Ok(tokens) => tokens
     Err(error) => raise Lexer(error)
   }
@@ -64,8 +64,8 @@ fn tac_gen_stage(source: String) -> (@codegen.TacProgram, Map[String, @validate.
 fn codegen_stage(source: String) -> (@codegen.AsmProgram, Map[String, @validate.SymbolTableEntry]) raise CompilerError {
   let (program, symbols) = tac_gen_stage(source)
   
-  match (try? program.asm(symbols)) {
-    Ok(asm) => (asm, symbols)
+  match (try? program.to_asm(symbols)) {
+    Ok(asm_prog) => (asm_prog, symbols)
     Err(error) => raise AsmBuilder(error)
   }
 }

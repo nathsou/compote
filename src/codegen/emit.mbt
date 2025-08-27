@@ -123,7 +123,7 @@ fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String 
   }
 }
 
-fn asm(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String raise EmitterError {
+fn fmt(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String raise EmitterError {
   let size = match ty {
     LongWord => Long
     QuadWord => Quad
@@ -132,14 +132,14 @@ fn asm(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String raise Emitt
   self.asm_reg_size(size, os)
 }
 
-fn AsmUnaryOp::asm(self: AsmUnaryOp) -> String {
+fn AsmUnaryOp::mnemonic(self: AsmUnaryOp) -> String {
   match self {
     Neg => "neg"
     BitwiseNot => "not"
   }
 }
 
-fn AsmBinaryOp::asm(self: AsmBinaryOp) -> String {
+fn AsmBinaryOp::mnemonic(self: AsmBinaryOp) -> String {
   match self {
     Add => "add"
     Sub => "sub"
@@ -172,31 +172,31 @@ fn suffix(self: CondCode) -> String {
 fn emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
   match inst {
     Mov(src~, dst~, ty~) => {
-      self.emit("mov\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
+      self.emit("mov\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
     }
     Movsx(src~, dst~) => {
-      self.emit("movslq \{src.asm(LongWord, self.os)}, \{dst.asm(QuadWord, self.os)}")
+      self.emit("movslq \{src.fmt(LongWord, self.os)}, \{dst.fmt(QuadWord, self.os)}")
     }
     MovZeroExtend(_) => {
       raise EmitterError::Unreachable("MovZeroExtend should have been removed by the ReplacePseudoRegs pass")
     }
     Unary(op~, dst~, ty~) => {
-      self.emit("\{op.asm()}\{ty.suffix()} \{dst.asm(ty, self.os)}")
+      self.emit("\{op.mnemonic()}\{ty.suffix()} \{dst.fmt(ty, self.os)}")
     }
     Binary(op=Shl | Sal as op, src~, dst~, ty~) => {
-      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
+      self.emit("\{op.mnemonic()}\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
     }
     Binary(op~, src~, dst~, ty~) => {
-      self.emit("\{op.asm()}\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
+      self.emit("\{op.mnemonic()}\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
     }
     Cmp(src~, dst~, ty~) => {
-      self.emit("cmp\{ty.suffix()} \{src.asm(ty, self.os)}, \{dst.asm(ty, self.os)}")
+      self.emit("cmp\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
     }
     IDiv(src~, ty~) => {
-      self.emit("idiv\{ty.suffix()} \{src.asm(ty, self.os)}")
+      self.emit("idiv\{ty.suffix()} \{src.fmt(ty, self.os)}")
     }
     Div(src~, ty~) => {
-      self.emit("div\{ty.suffix()} \{src.asm(ty, self.os)}")
+      self.emit("div\{ty.suffix()} \{src.fmt(ty, self.os)}")
     }
     Cdq(ty~) => {
       match ty {
@@ -217,7 +217,7 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
       self.emit(self.os.label(name) + ":")
     }
     Push(operand) => {
-      self.emit("pushq \{operand.asm(QuadWord, self.os)}")
+      self.emit("pushq \{operand.fmt(QuadWord, self.os)}")
     }
     Call(label) => {
       let suffix = match self.os {
@@ -273,8 +273,8 @@ fn show_initializer(init: @validate.StaticInit) -> String {
   }
 }
 
-fn emit_static_variable_def(self: Emitter, var: AsmStaticVarDef) -> Unit {
-  let { name, global, alignment, init } = var
+fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
+  let { name, global, alignment, init } = defn
   let name = self.os.symbol(name)
 
   if global {

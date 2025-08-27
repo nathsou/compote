@@ -1,5 +1,5 @@
 
-pub type! ValidationError {
+pub suberror ValidationError {
   NameResolution(NameResolutionError)
   TypeChecker(TypeCheckerError)
   SwitchAnalysis(SwitchResolutionError)
@@ -8,12 +8,12 @@ pub type! ValidationError {
 pub fn validated(prog: @parse.Program) -> (@parse.Program, Map[String, SymbolTableEntry]) raise ValidationError {
   let resolver = NameResolutionPass::new()
 
-  match resolver.resolved?(prog) {
+  match (try? resolver.resolved(prog)) {
     Ok(resolved) => {
       let checker = TypeChecker::new()
-      match checker.typed_program?(resolved) {
+      match (try? checker.typed_program(resolved)) {
         Ok(typed) => {
-          match analyze_switch_stmts?(typed) {
+          match (try? analyze_switch_stmts(typed)) {
             Ok(switch_analyzed) => (switch_analyzed, checker.symbols)
             Err(error) => raise SwitchAnalysis(error)
           }

@@ -36,7 +36,7 @@ pub impl Show for Type with output(self, logger: &Logger) {
     Long => "long"
     UnsignedInt => "unsigned int"
     UnsignedLong => "unsigned long"
-    FunType(params~, ret~) => "fun(" + String::concat(params.map(Show::to_string), separator=", ") + ") -> " + Show::to_string(ret)
+    FunType(params~, ret~) => "fun(" + params.map(Show::to_string).join(", ") + ") -> " + Show::to_string(ret)
   })
 }
 
@@ -122,7 +122,7 @@ pub fn show_expr(expr: Expr) -> String {
     Binary(op~, lhs~, rhs~, ty=_) => "(" + show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs) + ")"
     Assignment(op~, lhs~, rhs~, ty=_) => show_expr(lhs) + " " + Show::to_string(op) + " " + show_expr(rhs)
     Conditional(cond~, then~, otherwise~, ty=_) => show_expr(cond) + " ? " + show_expr(then) + " : " + show_expr(otherwise)
-    Call(name~, args~, ty=_) => name + "(" + (args.map(show_expr) |> String::concat(separator=", ")) + ")"
+    Call(name~, args~, ty=_) => name + "(" + (args.map(show_expr).join(", ")) + ")"
   }
 }
 
@@ -294,7 +294,7 @@ pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
 
   let params = func.params.map(fn(param) {
     Show::to_string(param.ty) + " " + param.name
-  }) |> String::concat(separator=", ")
+  }).join(", ")
 
   self.emit(storage_class + Show::to_string(func.return_ty) + " " + func.name + "(" + params + ")" + (if func.body.is_empty() {
     ";"

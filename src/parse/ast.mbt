@@ -181,7 +181,7 @@ pub fn Constant::fit_val_to_type(self: Constant, ty: Type) -> Constant raise {
     (UnsignedIntConst(n), Long) => LongConst(n.to_int64())
     (UnsignedLongConst(n), UnsignedInt) => UnsignedIntConst(n.to_uint())
     (UnsignedLongConst(n), UnsignedLong) => UnsignedLongConst(n)
-    (UnsignedLongConst(n), Long) => LongConst(n.to_int64())
+    (UnsignedLongConst(n), Long) => LongConst(n.reinterpret_as_int64())
     (UnsignedLongConst(n), Int) => IntConst(n.to_int())
     (_, FunType(_)) => raise Failure("Invalid valant type conversion")
   }

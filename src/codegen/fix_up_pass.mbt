@@ -1,6 +1,4 @@
 
-pub type FixUpPass Unit
-
 let max_i32: Int64 = @int.max_value.to_int64()
 let min_i32: Int64 = @int.min_value.to_int64()
 let max_u32: Int64 = 4294967295 // 2^32 - 1
@@ -13,7 +11,7 @@ fn is_larger_than_u32(n: Int64) -> Bool {
   n > max_u32 || n < min_i32
 }
 
-fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
+fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
   match inst {
      // some instructions with stack addresses as both operands are invalid
     Mov(src=Stack(_) | Data(_) as src, dst=Stack(_) | Data(_) as dst, ty~) => [
@@ -188,11 +186,11 @@ fn FixUpPass::rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
   }
 }
 
-pub fn FixUpPass::run(insts: Array[AsmInst]) -> Array[AsmInst] {
+pub fn fixup_run(insts: Array[AsmInst]) -> Array[AsmInst] {
   let new_insts = []
 
   for inst in insts {
-    for new_inst in FixUpPass::rewrite_inst(inst) {
+    for new_inst in fixup_rewrite_inst(inst) {
       new_insts.push(new_inst)
     }
   }

@@ -19,7 +19,7 @@ fn convert_to(val: @parse.Constant, ty: @parse.Type) -> StaticInit raise TypeChe
       IntConst(n) => LongInit(n.to_int64())
       LongConst(n) => LongInit(n)
       UnsignedIntConst(n) => LongInit(n.to_int64())
-      UnsignedLongConst(n) => LongInit(n.to_int64())
+      UnsignedLongConst(n) => LongInit(n.reinterpret_as_int64())
     }
     UnsignedInt => match val {
       IntConst(n) => UIntInit(n.reinterpret_as_uint())
@@ -64,7 +64,7 @@ pub struct TypeChecker {
   function_stack: Array[FunctionStackEntry]
 }
 
-pub type! TypeCheckerError {
+pub suberror TypeCheckerError {
   IncompatibleFunctionDeclarations(name~: String, old_decl~: @parse.Type, new_decl~: @parse.Type)
   FunctionDefinedMoreThanOnce(String)
   FunctionNameUsedAsVariable(String)

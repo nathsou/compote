@@ -18,7 +18,6 @@ pub suberror TacBuilderError {
   ContinueWithoutLabel
   LoopWithoutLabel
   SwitchWithoutLabel
-  CaseWithoutLabel
   CaseOutsideSwitch
   DefaultOutsideSwitch
   Unreachable(String)

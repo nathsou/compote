@@ -56,12 +56,12 @@ fn convert_cond_code(op: @parse.BinaryOp, is_signed~: Bool) -> CondCode raise As
   }
 }
 
-fn TacValue::asm(self: TacValue) -> AsmOperand {
+fn TacValue::to_operand(self: TacValue) -> AsmOperand {
   match self {
     Constant(IntConst(n)) => Imm(n.to_int64())
     Constant(LongConst(n)) => Imm(n)
     Constant(UnsignedIntConst(n)) => Imm(n.to_int64())
-    Constant(UnsignedLongConst(n)) => Imm(n.to_int64())
+    Constant(UnsignedLongConst(n)) => Imm(n.reinterpret_as_int64())
     Variable(name) => Pseudo(name)
   }
 }
@@ -95,30 +95,30 @@ let arg_regs: Array[AsmReg] = [DI, SI, DX, CX, R8, R9]
 fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
   match inst {
     Return(value) => {
-      let src = value.asm()
+      let src = value.to_operand()
       self.emit(Mov(src~, dst=Reg(AX), ty=self.asm_ty(value)))
       self.emit(Ret)
     }
     SignExtend(src~, dst~) => {
-      let src = src.asm()
-      let dst = dst.asm()
+      let src = src.to_operand()
+      let dst = dst.to_operand()
       self.emit(Movsx(src~, dst~))
     }
     Truncate(src~, dst~) => {
-      let src = src.asm()
-      let dst = dst.asm()
+      let src = src.to_operand()
+      let dst = dst.to_operand()
       self.emit(Mov(src~, dst~, ty=LongWord))
     }
     ZeroExtend(src~, dst~) => {
-      let src = src.asm()
-      let dst = dst.asm()
+      let src = src.to_operand()
+      let dst = dst.to_operand()
       self.emit(MovZeroExtend(src~, dst~))
     }
     Unary(op=Not, src~, dst~) => {
       let src_ty = self.asm_ty(src)
       let dst_ty = self.asm_ty(dst)
-      let src = src.asm()
-      let dst = dst.asm()
+      let src = src.to_operand()
+      let dst = dst.to_operand()
       self.emit(Cmp(src=Imm(0), dst=src, ty=src_ty))
       // clear the destination register before the set instruction
       self.emit(Mov(src=Imm(0), dst~, ty=dst_ty))
@@ -126,8 +126,8 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
     }
     Unary(op~, src~, dst~) => {
       let src_ty = self.asm_ty(src)
-      let src = src.asm()
-      let dst = dst.asm()
+      let src = src.to_operand()
+      let dst = dst.to_operand()
       self.emit(Mov(src~, dst~, ty=src_ty))
       self.emit(Unary(op=convert_unary_op(op), dst~, ty=src_ty))
     }
@@ -135,9 +135,9 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
       let is_signed = self.tacky_ty(lhs).is_signed()
       let lhs_ty = self.asm_ty(lhs)
       let dst_ty = self.asm_ty(dst)
-      let lhs = lhs.asm()
-      let rhs = rhs.asm()
-      let dst = dst.asm()
+      let lhs = lhs.to_operand()
+      let rhs = rhs.to_operand()
+      let dst = dst.to_operand()
       self.emit(Cmp(src=rhs, dst=lhs, ty=lhs_ty))
       // clear the destination register before the set instruction
       self.emit(Mov(src=Imm(0), dst~, ty=dst_ty))
@@ -147,9 +147,9 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
       let is_signed = self.tacky_ty(lhs).is_signed()
       let lhs_ty = self.asm_ty(lhs)
       let dst_ty = self.asm_ty(dst)
-      let lhs = lhs.asm()
-      let rhs = rhs.asm()
-      let dst = dst.asm()
+      let lhs = lhs.to_operand()
+      let rhs = rhs.to_operand()
+      let dst = dst.to_operand()
       
       match op {
         Equ | Neq | Gtr | Geq | Lss | Leq => {
@@ -198,20 +198,20 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
     }
     JumpIfZero(cond~, target~) => {
       let cond_ty = self.asm_ty(cond)
-      let cond = cond.asm()
+      let cond = cond.to_operand()
       self.emit(Cmp(src=Imm(0), dst=cond, ty=cond_ty))
       self.emit(JmpCond(cond=Eq, target~))
     }
     JumpIfNotZero(cond~, target~) => {
       let cond_ty = self.asm_ty(cond)
-      let cond = cond.asm()
+      let cond = cond.to_operand()
       self.emit(Cmp(src=Imm(0), dst=cond, ty=cond_ty))
       self.emit(JmpCond(cond=Ne, target~))
     }
     Copy(src~, dst~)  => {
       let ty = self.asm_ty(src)
-      let src = src.asm()
-      let dst = dst.asm()
+      let src = src.to_operand()
+      let dst = dst.to_operand()
       self.emit(Mov(src~, dst~, ty~))
     }
     Label(name) => {
@@ -233,14 +233,14 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
       }
 
       for i, arg in reg_args {
-        let asm_arg = arg.asm()
+        let asm_arg = arg.to_operand()
         self.emit(Mov(src=asm_arg, dst=Reg(arg_regs[i]), ty=self.asm_ty(arg)))
       }
 
       // push the remaining arguments onto the stack in reverse order
       for i = stack_args.length() - 1; i >= 0; i = i - 1 {
         let arg = stack_args[i]
-        let asm_arg = arg.asm()
+        let asm_arg = arg.to_operand()
         match asm_arg {
           Reg(_) | Imm(_) => {
             self.emit(Push(asm_arg))
@@ -268,7 +268,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
 
       // retrieve the return value
       let dst_ty = self.asm_ty(dst)
-      let dst = dst.asm()
+      let dst = dst.to_operand()
       self.emit(Mov(src=Reg(AX), dst~, ty=dst_ty))
     }
   }
@@ -284,7 +284,7 @@ fn align_to_16_bytes(size: Int64) -> Int64 {
   }
 }
 
-pub fn TacFunctionDef::asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmFunctionDef raise AsmBuilderError {
+pub fn TacFunctionDef::to_asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmFunctionDef raise AsmBuilderError {
   let builder = AsmBuilder::new(symbols)
 
   // placeholder for stack allocation
@@ -331,7 +331,7 @@ pub fn TacFunctionDef::asm(self: TacFunctionDef, symbols: Map[String, @validate.
   }
 
   let pass1 = ReplacePseudoRegsPass::new(BackendSymbolTable(backend_symbols))
-  let insts1 = match pass1.run?(builder.instructions) {
+  let insts1 = match (try? pass1.run(builder.instructions)) {
     Ok(insts) => insts
     Err(_) => raise AsmBuilderError::Unreachable("replace pseudo regs pass failed")
   }
@@ -341,7 +341,7 @@ pub fn TacFunctionDef::asm(self: TacFunctionDef, symbols: Map[String, @validate.
   // replace the placeholder with the actual stack allocation, aligned to 16 bytes
   insts1[0] = Binary(op=Sub, src=Imm(aligned_stack_size), dst=Reg(SP), ty=QuadWord)
 
-  let insts2 = FixUpPass::run(insts1)
+  let insts2 = fixup_run(insts1)
 
   {
     name: self.name,
@@ -351,14 +351,14 @@ pub fn TacFunctionDef::asm(self: TacFunctionDef, symbols: Map[String, @validate.
   }
 }
 
-pub fn TacProgram::asm(self: TacProgram, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmProgram raise AsmBuilderError {
+pub fn TacProgram::to_asm(self: TacProgram, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmProgram raise AsmBuilderError {
   let functions: Array[AsmFunctionDef] = []
   let static_vars: Array[AsmStaticVarDef] = []
 
   for item in self.top_level {
     match item {
       Function(function) => {
-        functions.push(function.asm(symbols))
+        functions.push(function.to_asm(symbols))
       }
       StaticVar(name~, global~, init~, ty~) => {
         let alignment = convert_type(ty).alignment()

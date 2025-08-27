@@ -42,7 +42,7 @@ pub impl Show for TacProgram with output(self, logger: &Logger) {
         logger.write_string("function ")
         logger.write_string(function.name)
         logger.write_string("(")
-        logger.write_string(String::concat(function.params, separator=", "))
+        logger.write_string(function.params.join(", "))
         logger.write_string(") {\n")
         
         for inst in function.body {

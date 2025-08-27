@@ -11,5 +11,6 @@
         "wasm-gc": {
             "exports": ["drive"]
         }
-    }
+    },
+    "warn-list": "-6"
 }

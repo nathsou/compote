@@ -414,7 +414,7 @@ fn next(self: Lexer) -> LexerResult {
   }
 }
 
-pub fn Lexer::lex(self: Lexer) -> Array[Token] raise LexerError {
+pub fn Lexer::tokenize(self: Lexer) -> Array[Token] raise LexerError {
   let tokens = []
 
   while true {
