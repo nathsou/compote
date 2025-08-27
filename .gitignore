@@ -1,7 +1,7 @@
 target/
 .mooncakes/
 out/
-writing-a-c-compiler-tests/
+
 compote
 
 # Added by cargo
