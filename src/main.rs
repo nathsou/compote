@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "linux" => OperatingSystem::Linux,
         "macos" => OperatingSystem::Macos,
         other => {
-            eprintln!("Unsupported operating system: {}", other);
+            eprintln!("Unsupported operating system: {other}");
             std::process::exit(1);
         }
     };
@@ -140,7 +140,7 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
         if ch == '\n' as i32 {
             // Flush
             let decoded = String::from_utf16_lossy(&host_state.print_buffer);
-            println!("{}", decoded);
+            println!("{decoded}");
             host_state.print_buffer.clear();
         } else if ch != '\r' as i32 {
             host_state.print_buffer.push(ch as u16);
@@ -205,7 +205,7 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
         // Flush the print buffer
         if !host_state.print_buffer.is_empty() {
             let decoded = String::from_utf16_lossy(&host_state.print_buffer);
-            println!("{}", decoded);
+            println!("{decoded}");
         }
 
         for output in &host_state.module_outputs {
@@ -244,7 +244,7 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
 
                     } else if matches.is_present("codegen") || *stage != DriverStage::Codegen {
                         // Print assembly code
-                        println!("{}", asm_code);
+                        println!("{asm_code}");
                     } else {
                         // Assemble the code into an executable
                         let output_file_path = Path::new(source_file).with_extension("");
@@ -252,7 +252,7 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
                     }
                 },
                 Err(err_msg) => {
-                    eprintln!("{}", err_msg);
+                    eprintln!("{err_msg}");
                     std::process::exit(1);
                 },
             }
@@ -272,7 +272,7 @@ fn preprocess(source_file: &str) -> io::Result<String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(io::Error::new(io::ErrorKind::Other, format!("{} error: {}", CC, stderr)))
+        Err(io::Error::other(format!("{CC} error: {stderr}")))
     } else {
         let preprocessed = String::from_utf8_lossy(&output.stdout).into_owned();
         Ok(preprocessed)
@@ -299,7 +299,7 @@ fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
     let output = Command::new(CC)
         .arg(&asm_file_path)
         .arg("-o")
-        .arg(&output_file_path)
+        .arg(output_file_path)
         .output()?;
 
     // Clean up temporary file
@@ -307,7 +307,7 @@ fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(io::Error::new(io::ErrorKind::Other, format!("{} error: {}", CC, stderr)))
+        Err(io::Error::other(format!("{CC} error: {stderr}")))
     } else {
         Ok(())
     }
@@ -315,11 +315,11 @@ fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
 
 // Function to parse the result from the WebAssembly module
 fn parse_result(result: &str) -> Result<String, String> {
-    if result.starts_with("ok:") {
-        Ok(result[3..].to_string())
-    } else if result.starts_with("err:") {
-        Err(result[4..].to_string())
+    if let Some(stripped) = result.strip_prefix("ok:") {
+        Ok(stripped.to_string())
+    } else if let Some(stripped) = result.strip_prefix("err:") {
+        Err(stripped.to_string())
     } else {
-        Err(format!("Unexpected result: {}", result))
+        Err(format!("Unexpected result: {result}"))
     }
 }
