@@ -2,13 +2,10 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Base dependencies: build tools, Python 3.10+, curl, git, and SSL certs
+# Base dependencies: build tools, curl, git, and SSL certs
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
-        python3 \
-        python3-venv \
-        python3-pip \
         curl \
         ca-certificates \
         git \
@@ -22,7 +19,6 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERS
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install a specific MoonBit CLI version
-# As requested: 0.6.25+d6913262c
 RUN curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s '0.6.25+d6913262c'
 ENV PATH="/root/.moon/bin:${PATH}"
 
@@ -30,4 +26,4 @@ ENV PATH="/root/.moon/bin:${PATH}"
 WORKDIR /workspace
 
 # Show versions for easier debugging in CI logs
-RUN rustc -V && cargo -V && python3 -V && moon --version || true
+RUN rustc -V && cargo -V && python3 -V && moonc -v || true
