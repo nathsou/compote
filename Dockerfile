@@ -2,10 +2,13 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Base dependencies: build tools, curl, git, and SSL certs
+# Base dependencies: build tools, Python 3.10+, curl, git, and SSL certs
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
+        python3 \
+        python3-venv \
+        python3-pip \
         curl \
         ca-certificates \
         git \
@@ -26,4 +29,4 @@ ENV PATH="/root/.moon/bin:${PATH}"
 WORKDIR /workspace
 
 # Show versions for easier debugging in CI logs
-RUN rustc -V && cargo -V && moonc -v || true
+RUN rustc -V && cargo -V && python3 -V && moonc -v || true
