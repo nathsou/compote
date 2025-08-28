@@ -26,4 +26,4 @@ ENV PATH="/root/.moon/bin:${PATH}"
 WORKDIR /workspace
 
 # Show versions for easier debugging in CI logs
-RUN rustc -V && cargo -V && python3 -V && moonc -v || true
+RUN rustc -V && cargo -V && moonc -v || true
