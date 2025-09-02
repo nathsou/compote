@@ -35,18 +35,18 @@ pub enum AsmBinaryOp {
 } derive(Show)
 
 pub enum AsmInst {
-  Mov(~src: AsmOperand, ~dst: AsmOperand, ~ty: AsmType)
-  Movsx(~src: AsmOperand, ~dst: AsmOperand)
-  MovZeroExtend(~src: AsmOperand, ~dst: AsmOperand)
-  Unary(~op: AsmUnaryOp, ~dst: AsmOperand, ~ty: AsmType)
-  Binary(~op: AsmBinaryOp, ~src: AsmOperand, ~dst: AsmOperand, ~ty: AsmType)
-  Cmp(~src: AsmOperand, ~dst: AsmOperand, ~ty: AsmType)
-  IDiv(~src: AsmOperand, ~ty: AsmType)
-  Div(~src: AsmOperand, ~ty: AsmType)
-  Cdq(~ty: AsmType)
+  Mov(src~: AsmOperand, dst~: AsmOperand, ty~: AsmType)
+  Movsx(src~: AsmOperand, dst~: AsmOperand)
+  MovZeroExtend(src~: AsmOperand, dst~: AsmOperand)
+  Unary(op~: AsmUnaryOp, dst~: AsmOperand, ty~: AsmType)
+  Binary(op~: AsmBinaryOp, src~: AsmOperand, dst~: AsmOperand, ty~: AsmType)
+  Cmp(src~: AsmOperand, dst~: AsmOperand, ty~: AsmType)
+  IDiv(src~: AsmOperand, ty~: AsmType)
+  Div(src~: AsmOperand, ty~: AsmType)
+  Cdq(ty~: AsmType)
   Jmp(String)
-  JmpCond(~cond: CondCode, ~target: String)
-  SetCond(~cond: CondCode, ~dst: AsmOperand)
+  JmpCond(cond~: CondCode, target~: String)
+  SetCond(cond~: CondCode, dst~: AsmOperand)
   Label(String)
   Push(AsmOperand)
   Call(String)
@@ -77,8 +77,8 @@ pub struct AsmProgram {
 }
 
 pub enum BackendSymbolTableEntry {
-  ObjEntry(~ty: AsmType, ~is_static: Bool)
-  FunEntry(~is_defined: Bool)
+  ObjEntry(ty~: AsmType, is_static~: Bool)
+  FunEntry(is_defined~: Bool)
 }
 
 pub fn size(self: AsmType) -> Int64 {
@@ -95,25 +95,25 @@ pub fn alignment(self: AsmType) -> Int64 {
   }
 }
 
-pub fn suffix(self: AsmType) -> String {
+pub fn AsmType::suffix(self: AsmType) -> String {
   match self {
     LongWord => "l"
     QuadWord => "q"
   }
 }
 
-pub type BackendSymbolTable Map[String, BackendSymbolTableEntry]
+pub struct BackendSymbolTable(Map[String, BackendSymbolTableEntry])
 
-fn get_symbol_ty(self: BackendSymbolTable, name: String) -> AsmType! {
-  match self._[name] {
-    Some(ObjEntry(~ty, is_static=_)) => ty
+fn get_symbol_ty(self: BackendSymbolTable, name: String) -> AsmType raise {
+  match self.inner().get(name) {
+    Some(ObjEntry(ty~, is_static=_)) => ty
     _ => raise Failure("symbol not found in symbol table")
   }
 }
 
 fn is_symbol_static(self: BackendSymbolTable, name: String) -> Bool {
-  match self._[name] {
-    Some(ObjEntry(ty=_, ~is_static)) => is_static
+  match self.inner().get(name) {
+    Some(ObjEntry(ty=_, is_static~)) => is_static
     _ => false
   }
 }

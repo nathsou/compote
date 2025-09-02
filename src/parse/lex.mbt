@@ -4,7 +4,7 @@ pub struct Lexer {
   mut index: Int
 }
 
-pub type! LexerError {
+pub suberror LexerError {
   UnexepectedChar(Char)
   InvalidIntegerLiteral(String)
   InvalidDoubleLiteral(String)
@@ -40,19 +40,19 @@ pub fn Lexer::new(input: String) -> Lexer {
   { input, index: 0 }
 }
 
-fn peek(self: Lexer) -> Char {
-  self.input[self.index]
+fn Lexer::peek(self: Lexer) -> Char {
+  self.input[self.index].to_char().unwrap()
 }
 
-fn lookahead(self: Lexer, n: Int) -> Char {
-  self.input[self.index + n]
+fn Lexer::lookahead(self: Lexer, n: Int) -> Char {
+  self.input[self.index + n].to_char().unwrap()
 }
 
-fn matches(self: Lexer, char: Char) -> Bool {
+fn Lexer::matches(self: Lexer, char: Char) -> Bool {
   self.peek() == char
 }
 
-fn matches_str(self: Lexer, chars: String) -> Bool {
+fn Lexer::matches_str(self: Lexer, chars: String) -> Bool {
   for i, char in chars {
     if self.lookahead(i) != char {
       return false
@@ -62,7 +62,7 @@ fn matches_str(self: Lexer, chars: String) -> Bool {
   true
 }
 
-fn consumes(self: Lexer, char: Char) -> Bool {
+fn Lexer::consumes(self: Lexer, char: Char) -> Bool {
   if self.matches(char) {
     self.index += 1
     true
@@ -71,7 +71,7 @@ fn consumes(self: Lexer, char: Char) -> Bool {
   }
 }
 
-fn skip_whitespaces(self: Lexer) -> Unit {
+fn Lexer::skip_whitespaces(self: Lexer) -> Unit {
   while self.index < self.input.length() && is_whitespace(self.peek()) {
     self.index += 1
   }
@@ -119,13 +119,13 @@ fn reinterpret_i64(n: Int64, kind: IntKind) -> ParsedNum {
 let max_int: Int64 = @int.max_value.to_int64()
 let min_int: Int64 = @int.min_value.to_int64()
 
-fn parse_num(self: Lexer) -> ParsedNum!LexerError {
+fn parse_num(self: Lexer) -> ParsedNum raise LexerError {
   let mut digits = ""
   let mut is_integral = true
   let mut i = self.index
 
   while i < self.input.length() {
-    let char = self.input[i]
+    let char = self.input[i].to_char().unwrap()
     i += 1
 
     if is_digit(char) {
@@ -195,7 +195,7 @@ fn parse_num(self: Lexer) -> ParsedNum!LexerError {
 
     reinterpret_i64(value, kind)
   } else {
-    match @strconv.parse_double?(digits) {
+    match (try? @strconv.parse_double(digits)) {
       Ok(n) => {
         let next_char = self.peek()
         if is_identifier_start(next_char) {
@@ -228,11 +228,11 @@ fn parse_num(self: Lexer) -> ParsedNum!LexerError {
   num
 }
 
-fn parse_identifier(self: Lexer) -> String {
+fn Lexer::parse_identifier(self: Lexer) -> String {
   let mut identifier = ""
   
   for i in self.index..<self.input.length() {
-    let char = self.input[i]
+    let char = self.input[i].to_char().unwrap()
 
     if is_alphanumeric(char) || char == '_' {
       identifier += char.to_string()
@@ -336,7 +336,7 @@ fn advance(self: Lexer) -> Unit {
   self.index += 1
 }
 
-enum LexerResult {
+priv enum LexerResult {
   Ok(Token)
   Err(LexerError)
   EOF
@@ -521,7 +521,7 @@ fn next(self: Lexer) -> LexerResult {
     }
     _ => {
       if is_digit(char) || char == '.' {
-        match self.parse_num?() {
+        match (try? self.parse_num()) {
           Err(error) => return Err(error)
           Ok(value) => match value {
             Int(n) => Ok(IntLiteral(n))
@@ -541,7 +541,7 @@ fn next(self: Lexer) -> LexerResult {
   }
 }
 
-pub fn lex(self: Lexer) -> Array[Token]!LexerError {
+pub fn Lexer::tokenize(self: Lexer) -> Array[Token] raise LexerError {
   let tokens = []
 
   while true {

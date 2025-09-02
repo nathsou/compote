@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build CI Docker image
+        run: docker build -t compote-ci:latest .
+
+      - name: Build compiler (release)
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            compote-ci:latest \
+            bash -lc "./build.sh"
+
+      - name: Run writing-a-c-compiler-tests
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace/writing-a-c-compiler-tests \
+            compote-ci:latest \
+            bash -lc "./test_compiler ../target/release/compote --chapter 12 --bitwise --compound"
+

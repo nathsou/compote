@@ -74,7 +74,7 @@ pub fn is_specifier(self: Token) -> Bool {
   }
 }
 
-pub impl Show for Token with output(self, logger: Logger) {
+pub impl Show for Token with output(self, logger: &Logger) {
   logger.write_string(match self {
     Lparen => "("
     Rparen => ")"

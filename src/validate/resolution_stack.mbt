@@ -4,29 +4,28 @@ enum ResolutionStackEntry {
   Switch(String)
 }
 
-pub type ResolutionStack Array[ResolutionStackEntry]
+pub struct ResolutionStack(Array[ResolutionStackEntry])
 
 pub fn ResolutionStack::new() -> ResolutionStack {
-  []
+  ResolutionStack([])
 }
 
 pub fn ResolutionStack::push(self: ResolutionStack, entry: ResolutionStackEntry) -> Unit {
-  self._.push(entry)
+  self.inner().push(entry)
 }
 
 pub fn ResolutionStack::pop(self: ResolutionStack) -> Unit {
-  let _ = self._.pop()
+  let _ = self.inner().pop()
 }
 
 pub fn ResolutionStack::peek(self: ResolutionStack) -> ResolutionStackEntry? {
-  self._.last()
+  self.inner().last()
 }
 
 pub fn ResolutionStack::get_innermost_loop_label(self: ResolutionStack) -> String? {
-  for i = self._.length() - 1; i >= 0; i = i -1 {
-    match self._[i] {
-      Loop(label) => return Some(label)
-      _ => ()
+  for i = self.inner().length() - 1; i >= 0; i = i - 1 {
+    if self.inner()[i] is Loop(label) {
+      return Some(label)
     }
   }
 
