@@ -105,7 +105,7 @@ pub(all) enum BinaryOp {
 
 pub(all) enum AssignmentOp {
   Assign; AssignAdd; AssignSub; AssignMul; AssignDiv; AssignRem
-  AssignAnd; AssignOr; AssignXor; AssignSiftLeft; AssignShiftRight
+  AssignAnd; AssignOr; AssignXor; AssignShiftLeft; AssignShiftRight
 } derive(Eq)
 
 // https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
@@ -178,7 +178,7 @@ pub fn AssignmentOp::binop(self: AssignmentOp) -> BinaryOp? {
     AssignAnd => Some(BitwiseAnd)
     AssignOr => Some(BitwiseOr)
     AssignXor => Some(BitwiseXor)
-    AssignSiftLeft => Some(ShiftLeft)
+    AssignShiftLeft => Some(ShiftLeft)
     AssignShiftRight => Some(ShiftRight)
     Assign => None
   }
@@ -203,5 +203,7 @@ pub fn Constant::fit_val_to_type(self: Constant, ty: Type) -> Constant raise {
     (UnsignedLongConst(n), Long) => LongConst(n.reinterpret_as_int64())
     (UnsignedLongConst(n), Int) => IntConst(n.to_int())
     (_, FunType(_)) => raise Failure("Invalid valant type conversion")
+    (_, Double) => raise Failure("fit_val_to_type: unhandled")
+    (DoubleConst(_), _) => raise Failure("fit_val_to_type: unhandled")
   }
 }

@@ -62,6 +62,7 @@ fn TacValue::to_operand(self: TacValue) -> AsmOperand {
     Constant(LongConst(n)) => Imm(n)
     Constant(UnsignedIntConst(n)) => Imm(n.to_int64())
     Constant(UnsignedLongConst(n)) => Imm(n.reinterpret_as_int64())
+    Constant(DoubleConst(_)) => panic()
     Variable(name) => Pseudo(name)
   }
 }
@@ -70,6 +71,7 @@ fn convert_type(ty: @parse.Type) -> AsmType raise AsmBuilderError {
   match ty {
     Int | UnsignedInt => LongWord
     Long | UnsignedLong => QuadWord
+    Double => panic()
     FunType(_) => raise AsmBuilderError::Unreachable("converting function type to AsmType")
   }
 }
@@ -271,6 +273,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
       let dst = dst.to_operand()
       self.emit(Mov(src=Reg(AX), dst~, ty=dst_ty))
     }
+    DoubleToInt(_) | DoubleToUInt(_) | IntToDouble(_) | UIntToDouble(_) => panic()
   }
 }
 

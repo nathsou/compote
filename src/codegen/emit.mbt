@@ -270,6 +270,7 @@ fn show_initializer(init: @validate.StaticInit) -> String {
     LongInit(n) => ".quad \{n}"
     UIntInit(n) => ".long \{n}"
     ULongInit(n) => ".quad \{n}"
+    DoubleInit(_) => panic()
   }
 }
 
@@ -290,6 +291,7 @@ fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
       let size = match init {
         IntInit(_) | UIntInit(_) => 4
         LongInit(_) | ULongInit(_) => 8
+        DoubleInit(_) => panic()
       }
 
       self.emit(".zero \{size}")
@@ -300,6 +302,7 @@ fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
       self.emit("\{name}:")
       self.emit(show_initializer(init))
     }
+    DoubleInit(_) => panic()
   }
 }
 

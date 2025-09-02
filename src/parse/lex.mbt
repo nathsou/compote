@@ -332,7 +332,7 @@ fn categorize_identifier(identifier: String) -> Token {
   Identifier(identifier)
 }
 
-fn advance(self: Lexer) -> Unit {
+fn Lexer::advance(self: Lexer) -> Unit {
   self.index += 1
 }
 
@@ -342,7 +342,7 @@ priv enum LexerResult {
   EOF
 }
 
-fn next(self: Lexer) -> LexerResult {
+fn Lexer::next(self: Lexer) -> LexerResult {
   self.skip_whitespaces()
 
   if self.index >= self.input.length() {

@@ -405,7 +405,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise Typ
       }
 
       match op {
-        AssignSiftLeft | AssignShiftRight => {
+        AssignShiftLeft | AssignShiftRight => {
           Assignment(op~, lhs~, rhs~, ty=Some(lhs.ty()))
         }
         _ => {

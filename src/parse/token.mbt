@@ -53,7 +53,7 @@ pub fn to_binop(self: Token) -> BinaryOp? {
     AmpersandEqual => Some(Assignment(AssignAnd))
     PipeEqual => Some(Assignment(AssignOr))
     CaretEqual => Some(Assignment(AssignXor))
-    LshiftEqual => Some(Assignment(AssignSiftLeft))
+    LshiftEqual => Some(Assignment(AssignShiftLeft))
     RshiftEqual => Some(Assignment(AssignShiftRight))
     QuestionMark => Some(Ternary)
     _ => None

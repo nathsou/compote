@@ -75,22 +75,24 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
 fn cast_expr(src~: TacValue, dst~: TacValue, src_ty~: @parse.Type, dst_ty~: @parse.Type) -> TacInst {
     // assuming src.ty != dst.ty
     match (src_ty, dst_ty) {
-      (Int | Long, Double) => IntToDouble(~src, ~dst)
-      (UnsignedInt | UnsignedLong, Double) => UIntToDouble(~src, ~dst)
-      (Double, Int | Long) => DoubleToInt(~src, ~dst)
-      (Double, UnsignedInt | UnsignedLong) => DoubleToUInt(~src, ~dst)
+      (Int | Long, Double) => IntToDouble(src~, dst~)
+      (UnsignedInt | UnsignedLong, Double) => UIntToDouble(src~, dst~)
+      (Double, Int | Long) => DoubleToInt(src~, dst~)
+      (Double, UnsignedInt | UnsignedLong) => DoubleToUInt(src~, dst~)
       _ => {
         let src_ty_size = src_ty.byte_size()
         let dst_ty_size = dst_ty.byte_size()
 
-    if dst_ty_size == src_ty_size {
-      return Copy(src~, dst~)
-    } else if dst_ty_size < src_ty_size {
-      return Truncate(src~, dst~)
-    } else if src_ty.is_signed() {
-      return SignExtend(src~, dst~)
-    } else {
-      return ZeroExtend(src~, dst~)
+        if dst_ty_size == src_ty_size {
+          Copy(src~, dst~)
+        } else if dst_ty_size < src_ty_size {
+          Truncate(src~, dst~)
+        } else if src_ty.is_signed() {
+          SignExtend(src~, dst~)
+        } else {
+          ZeroExtend(src~, dst~)
+        }
+      }
     }
 }
 
@@ -183,20 +185,6 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue raise TacBuilde
       dst
     }
     Assignment(op~, lhs=Variable(name~, ty=Some(lhs_ty)), rhs~, ty=Some(res_ty)) => {
-      let compound_op: Option[@parse.BinaryOp] = match op {
-        AssignAdd => Some(Add)
-        AssignSub => Some(Sub)
-        AssignMul => Some(Mul)
-        AssignDiv => Some(Div)
-        AssignRem => Some(Rem)
-        AssignAnd => Some(BitwiseAnd)
-        AssignOr => Some(BitwiseOr)
-        AssignXor => Some(BitwiseXor)
-        AssignShl => Some(ShiftLeft)
-        AssignShr => Some(ShiftRight)
-        Assign => None
-      }
-
       let rhs = self.convert_expr(rhs)
       let dst = TacValue::Variable(name)
 

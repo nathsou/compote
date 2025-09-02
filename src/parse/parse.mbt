@@ -198,18 +198,6 @@ fn parse_primary_expr(self: Parser) -> Expr raise ParserError {
       self.advance()
       Constant(val=DoubleConst(n), ty=None)
     }
-    UIntLiteral(n) => {
-      self.advance()
-      Constant(val=UnsignedIntConst(n), ty=None)
-    }
-    ULongLiteral(n) => {
-      self.advance()
-      Constant(val=UnsignedLongConst(n), ty=None)
-    }
-    DoubleLiteral(n) => {
-      self.advance()
-      Constant(val=DoubleConst(n), ty=None)
-    }
     Identifier(name) => {
       self.advance()
 
@@ -219,14 +207,6 @@ fn parse_primary_expr(self: Parser) -> Expr raise ParserError {
       } else {
         Variable(name~, ty=None)
       }
-    }
-    UIntLiteral(n) => {
-      self.advance()
-      Constant(val=UnsignedIntConst(n), ty=None)
-    }
-    ULongLiteral(n) => {
-      self.advance()
-      Constant(val=UnsignedLongConst(n), ty=None)
     }
     Lparen => {
       self.advance()
