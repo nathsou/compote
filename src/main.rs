@@ -311,7 +311,7 @@ fn assemble(assembly_code: &str, output_file_path: &str, libraries: &[&str]) -> 
     // Invoke clang to assemble and link
     let mut cmd = Command::new(CC);
 
-    cmd.arg(&asm_file_path)
+    let output = cmd.arg(&asm_file_path)
         .arg("-o")
         .arg(output_file_path)
         .output()?;
