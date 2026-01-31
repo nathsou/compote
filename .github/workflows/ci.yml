@@ -18,19 +18,11 @@ jobs:
       - name: Build CI Docker image
         run: docker build -t compote-ci:latest .
 
-      - name: Build compiler (release)
-        run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace" \
-            -w /workspace \
-            compote-ci:latest \
-            bash -lc "./build.sh"
-
       - name: Run writing-a-c-compiler-tests
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace/writing-a-c-compiler-tests \
             compote-ci:latest \
-            bash -lc "./test_compiler ../target/release/compote --chapter 12 --bitwise --compound"
+            bash -lc "./build.sh && ./test_compiler ../target/release/compote --chapter 13 --stage tacky --bitwise --compound"
 
