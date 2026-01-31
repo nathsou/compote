@@ -9,24 +9,24 @@ pub fn PrettyPrinter::new(logger: &Logger) -> PrettyPrinter {
   { indent: 0, _spaces: "", logger }
 }
 
-fn update_indentation(self: PrettyPrinter, new_indent: Int) -> Unit {
+fn PrettyPrinter::update_indentation(self: PrettyPrinter, new_indent: Int) -> Unit {
   self.indent = new_indent
   self._spaces = "  ".repeat(new_indent)
 }
 
-fn indent(self: PrettyPrinter) -> Unit {
+fn PrettyPrinter::indent(self: PrettyPrinter) -> Unit {
   self.update_indentation(self.indent + 1)
 }
 
-fn dedent(self: PrettyPrinter) -> Unit {
+fn PrettyPrinter::dedent(self: PrettyPrinter) -> Unit {
   self.update_indentation(self.indent - 1)
 }
 
-fn emit(self: PrettyPrinter, s: String) -> Unit {
+fn PrettyPrinter::emit(self: PrettyPrinter, s: String) -> Unit {
   self.logger.write_string(self._spaces + s + "\n")
 }
 
-fn write_string(self: PrettyPrinter, s: String) -> Unit {
+fn PrettyPrinter::write_string(self: PrettyPrinter, s: String) -> Unit {
   self.logger.write_string(s)
 }
 
@@ -128,7 +128,7 @@ pub fn show_expr(expr: Expr) -> String {
   }
 }
 
-fn show_decl(self: PrettyPrinter, decl: Decl) -> Unit {
+fn PrettyPrinter::show_decl(self: PrettyPrinter, decl: Decl) -> Unit {
   match decl {
     VarDecl({ ty, name, value, storage_class }) => {
       let storage_class_str = match storage_class {
@@ -151,7 +151,7 @@ fn show_decl(self: PrettyPrinter, decl: Decl) -> Unit {
   }
 }
 
-pub fn show_block_item(self: PrettyPrinter, item: BlockItem) -> Unit {
+pub fn PrettyPrinter::show_block_item(self: PrettyPrinter, item: BlockItem) -> Unit {
   match item {
     Decl(decl) => {
       self.show_decl(decl)
@@ -162,13 +162,13 @@ pub fn show_block_item(self: PrettyPrinter, item: BlockItem) -> Unit {
   }
 }
 
-pub fn show_block(self: PrettyPrinter, block: Array[BlockItem]) -> Unit {
+pub fn PrettyPrinter::show_block(self: PrettyPrinter, block: Array[BlockItem]) -> Unit {
   for item in block {
     self.show_block_item(item)
   }
 }
 
-pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
+pub fn PrettyPrinter::show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
   match stmt {
     Return(expr) => {
       self.emit("return " + show_expr(expr) + ";")
@@ -288,7 +288,7 @@ pub fn show_stmt(self: PrettyPrinter, stmt: Stmt) -> Unit {
   }
 }
 
-pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
+pub fn PrettyPrinter::show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
   let storage_class = match func.storage_class {
     Some(storage_class) => Show::to_string(storage_class) + " "
     None => ""
@@ -298,7 +298,7 @@ pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
     Show::to_string(param.ty) + " " + param.name
   }).join(", ")
 
-  self.emit(storage_class + Show::to_string(func.return_ty) + " " + func.name + "(" + params + ")" + (if func.body.is_empty() {
+  self.emit(storage_class + Show::to_string(func.return_ty) + " " + func.name + "(" + params + ")" + (if func.body is None {
     ";"
   } else {
     " {"
@@ -317,7 +317,7 @@ pub fn show_function_decl(self: PrettyPrinter, func: FunctionDecl) -> Unit {
   self.emit("")
 }
 
-pub fn show_program(self: PrettyPrinter, program: Program) -> Unit {
+pub fn PrettyPrinter::show_program(self: PrettyPrinter, program: Program) -> Unit {
   for decl in program.decls {
     self.show_decl(decl)
   }

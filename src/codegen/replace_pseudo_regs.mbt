@@ -44,7 +44,7 @@ fn ReplacePseudoRegsPass::rewrite_operand(self: ReplacePseudoRegsPass, operand: 
   }
 }
 
-fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
+fn ReplacePseudoRegsPass::rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
   match inst {
     Mov(src~, dst~, ty~) => {
       let src = self.rewrite_operand(src)
@@ -100,7 +100,7 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
   }
 }
 
-pub fn run(self: ReplacePseudoRegsPass, insts: Array[AsmInst]) -> Array[AsmInst] raise {
+pub fn ReplacePseudoRegsPass::run(self: ReplacePseudoRegsPass, insts: Array[AsmInst]) -> Array[AsmInst] raise {
   let new_insts = []
 
   for inst in insts {

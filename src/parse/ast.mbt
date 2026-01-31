@@ -109,7 +109,7 @@ pub(all) enum AssignmentOp {
 } derive(Eq)
 
 // https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
-pub fn precedence(self: BinaryOp) -> Int {
+pub fn BinaryOp::precedence(self : BinaryOp) -> Int {
   match self {
     Mul | Div | Rem => 50
     Add | Sub => 45
@@ -126,7 +126,7 @@ pub fn precedence(self: BinaryOp) -> Int {
   }
 }
 
-pub fn to_type(self: FunctionDecl) -> Type {
+pub fn FunctionDecl::to_type(self : FunctionDecl) -> Type {
   FunType(params=self.params.map(fn(param) { param.ty }), ret=self.return_ty)
 }
 
@@ -202,8 +202,8 @@ pub fn Constant::fit_val_to_type(self: Constant, ty: Type) -> Constant raise {
     (UnsignedLongConst(n), UnsignedLong) => UnsignedLongConst(n)
     (UnsignedLongConst(n), Long) => LongConst(n.reinterpret_as_int64())
     (UnsignedLongConst(n), Int) => IntConst(n.to_int())
-    (_, FunType(_)) => raise Failure("Invalid valant type conversion")
-    (_, Double) => raise Failure("fit_val_to_type: unhandled")
-    (DoubleConst(_), _) => raise Failure("fit_val_to_type: unhandled")
+    (_, FunType(_)) => fail("Invalid valant type conversion")
+    (_, Double) => fail("fit_val_to_type: unhandled")
+    (DoubleConst(_), _) => fail("fit_val_to_type: unhandled")
   }
 }

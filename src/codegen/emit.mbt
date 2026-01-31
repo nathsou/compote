@@ -2,7 +2,7 @@
 pub struct Emitter {
   os: OperatingSystem
   lines: Array[String]
-  symbols: Map[String, @validate.SymbolTableEntry]
+  symbols: Map[String, SymbolTableEntry]
   mut indentation: Int
 }
 
@@ -11,25 +11,25 @@ pub suberror EmitterError {
   Unreachable(String)
 } derive(Show)
 
-pub fn Emitter::new(os: OperatingSystem, symbols: Map[String, @validate.SymbolTableEntry]) -> Emitter {
+pub fn Emitter::new(os: OperatingSystem, symbols: Map[String, SymbolTableEntry]) -> Emitter {
   { os, lines: [], indentation: 0, symbols }
 }
 
-fn symbol(self: OperatingSystem, name: String) -> String {
+fn OperatingSystem::symbol(self: OperatingSystem, name: String) -> String {
   match self {
     Linux => name
     MacOS => "_" + name
   }
 }
 
-fn align(self: OperatingSystem, n: Int64) -> String {
+fn OperatingSystem::align(self: OperatingSystem, n: Int64) -> String {
   match self {
     Linux => ".balign \{n}" // could also use .align directive
     MacOS => ".balign \{n}"
   }
 }
 
-fn label(self: OperatingSystem, name: String) -> String {
+fn OperatingSystem::label(self: OperatingSystem, name: String) -> String {
   match self {
     Linux => ".L" + name
     MacOS => "L" + name
@@ -61,7 +61,7 @@ fn Emitter::emit(self: Emitter, line: String) -> Unit {
   self.lines.push(repeat_string("  ", self.indentation) + line)
 }
 
-fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String raise EmitterError {
+fn AsmOperand::asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String raise EmitterError {
   match self {
     Imm(n) => "$\{n}"
     Reg(reg) => match reg {
@@ -123,7 +123,7 @@ fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String 
   }
 }
 
-fn fmt(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String raise EmitterError {
+fn AsmOperand::fmt(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String raise EmitterError {
   let size = match ty {
     LongWord => Long
     QuadWord => Quad
@@ -154,7 +154,7 @@ fn AsmBinaryOp::mnemonic(self: AsmBinaryOp) -> String {
   }
 }
 
-fn suffix(self: CondCode) -> String {
+fn CondCode::suffix(self: CondCode) -> String {
   match self {
     Eq => "e"
     Ne => "ne"
@@ -169,7 +169,7 @@ fn suffix(self: CondCode) -> String {
   }
 }
 
-fn emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
+fn Emitter::emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
   match inst {
     Mov(src~, dst~, ty~) => {
       self.emit("mov\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
@@ -242,7 +242,7 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
   }
 }
 
-fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit raise EmitterError {
+fn Emitter::emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit raise EmitterError {
   let name = self.os.symbol(f.name)
 
   if f.global {
@@ -264,7 +264,7 @@ fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit raise EmitterErro
   self.indentation -= 1
 }
 
-fn show_initializer(init: @validate.StaticInit) -> String {
+fn show_initializer(init: StaticInit) -> String {
   match init {
     IntInit(n) => ".long \{n}"
     LongInit(n) => ".quad \{n}"
@@ -274,7 +274,7 @@ fn show_initializer(init: @validate.StaticInit) -> String {
   }
 }
 
-fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
+fn Emitter::emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
   let { name, global, alignment, init } = defn
   let name = self.os.symbol(name)
 
@@ -306,7 +306,7 @@ fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
   }
 }
 
-pub fn emit_program(self: Emitter, program: AsmProgram) -> Unit raise EmitterError {
+pub fn Emitter::emit_program(self: Emitter, program: AsmProgram) -> Unit raise EmitterError {
   for v in program.static_vars {
     self.emit_static_variable_def(v)
   }

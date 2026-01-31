@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -22,7 +22,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERS
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install a specific MoonBit CLI version
-RUN curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s '0.6.25+d6913262c'
+RUN curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s '0.7.2+938b1f804'
 ENV PATH="/root/.moon/bin:${PATH}"
 
 # Default workdir; actual repo will be bind-mounted by the workflow

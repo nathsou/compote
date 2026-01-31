@@ -1,4 +1,7 @@
 
+using @parse { type Expr, type Type, type Stmt, type Decl, type FunctionDecl, type Program }
+using @validate { type SymbolTableEntry, type StaticInit }
+
 priv struct TacContext {
   mut next_var_id: Int
   mut next_label_id: Int
@@ -9,11 +12,11 @@ let ctx: TacContext = { next_var_id: 0, next_label_id: 0 }
 pub struct TacBuilder {
   instructions: Array[TacInst]
   switch_stack: Array[TacSwitchStackEntry]
-  symbols: Map[String, @validate.SymbolTableEntry]
+  symbols: Map[String, SymbolTableEntry]
 }
 
 pub suberror TacBuilderError {
-  InvalidAssignmentTarget(@parse.Expr)
+  InvalidAssignmentTarget(Expr)
   BreakWithoutLabel
   ContinueWithoutLabel
   LoopWithoutLabel
@@ -23,7 +26,7 @@ pub suberror TacBuilderError {
   Unreachable(String)
 } derive(Show)
 
-pub fn TacBuilder::new(symbols: Map[String, @validate.SymbolTableEntry]) -> TacBuilder {
+pub fn TacBuilder::new(symbols: Map[String, SymbolTableEntry]) -> TacBuilder {
   {
     instructions: [],
     switch_stack: [],
@@ -38,7 +41,7 @@ struct TacSwitchStackEntry {
   mut current_case_index: Int
 }
 
-fn next_temp_var(self: TacBuilder, ty: @parse.Type) -> String {
+fn TacBuilder::next_temp_var(self: TacBuilder, ty: Type) -> String {
   let var_name = "tmp." + ctx.next_var_id.to_string()
   ctx.next_var_id += 1
   self.symbols[var_name] = Variable(ty=ty, attributes=LocalAttr)
@@ -52,7 +55,7 @@ fn next_label(prefix: String) -> String {
   label_name
 }
 
-fn emit(self: TacBuilder, inst: TacInst) -> Unit {
+fn TacBuilder::emit(self: TacBuilder, inst: TacInst) -> Unit {
   self.instructions.push(inst)
 }
 
@@ -72,7 +75,7 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
   "case_fallthrough_" + switch_label + "." + case_index.to_string()
 }
 
-fn cast_expr(src~: TacValue, dst~: TacValue, src_ty~: @parse.Type, dst_ty~: @parse.Type) -> TacInst {
+fn cast_expr(src~: TacValue, dst~: TacValue, src_ty~: Type, dst_ty~: Type) -> TacInst {
     // assuming src.ty != dst.ty
     match (src_ty, dst_ty) {
       (Int | Long, Double) => IntToDouble(src~, dst~)
@@ -96,7 +99,7 @@ fn cast_expr(src~: TacValue, dst~: TacValue, src_ty~: @parse.Type, dst_ty~: @par
     }
 }
 
-fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue raise TacBuilderError {
+fn TacBuilder::convert_expr(self: TacBuilder, expr: Expr) -> TacValue raise TacBuilderError {
   match expr {
     Constant(val~, ty=_) => Constant(val)
     Variable(name~, ty=_) => Variable(name)
@@ -239,7 +242,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue raise TacBuilde
   }
 }
 
-fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit raise TacBuilderError {
+fn TacBuilder::convert_stmt(self: TacBuilder, stmt: Stmt) -> Unit raise TacBuilderError {
   match stmt {
     Return(expr) => {
       let src = self.convert_expr(expr)
@@ -338,7 +341,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit raise TacBuilderErr
 
       match init {
         InitEmpty => ()
-        InitDecl(decl) => self.convert_decl(@parse.VarDecl(decl))
+        InitDecl(decl) => self.convert_decl(VarDecl(decl))
         InitExpr(expr) => { let _ = self.convert_expr(expr) }
       }
 
@@ -445,7 +448,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit raise TacBuilderErr
   }
 }
 
-fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit raise TacBuilderError {
+fn TacBuilder::convert_decl(self: TacBuilder, decl: Decl) -> Unit raise TacBuilderError {
   match decl {
     // extern and static variables are handled at the top level
     VarDecl({ storage_class: Some(_), ty: _, name: _, value: _}) => ()
@@ -463,7 +466,7 @@ fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit raise TacBuilderErr
   }
 }
 
-fn convert_function_def(func: @parse.FunctionDecl, symbols: Map[String, @validate.SymbolTableEntry]) -> TacFunctionDef? raise TacBuilderError {
+fn convert_function_def(func: FunctionDecl, symbols: Map[String, SymbolTableEntry]) -> TacFunctionDef? raise TacBuilderError {
   let builder = TacBuilder::new(symbols)
 
   match func.body {
@@ -497,7 +500,7 @@ fn convert_function_def(func: @parse.FunctionDecl, symbols: Map[String, @validat
   }
 }
 
-pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolTableEntry]) -> TacProgram raise TacBuilderError {
+pub fn convert_prog(prog: Program, symbols: Map[String, SymbolTableEntry]) -> TacProgram raise TacBuilderError {
   let top_level: Array[TacTopLevel] = []
 
   for decl in prog.decls {
@@ -523,7 +526,7 @@ pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolT
                 top_level.push(StaticVar(name~, global~, init~, ty~))
               }
               Tentative => {
-                let init: @validate.StaticInit = match ty {
+                let init: StaticInit = match ty {
                   Int => IntInit(0)
                   Long => LongInit(0)
                   UnsignedInt => UIntInit(0)

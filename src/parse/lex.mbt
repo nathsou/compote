@@ -116,18 +116,17 @@ fn reinterpret_i64(n: Int64, kind: IntKind) -> ParsedNum {
   }
 }
 
-let max_int: Int64 = @int.max_value.to_int64()
-let min_int: Int64 = @int.min_value.to_int64()
+let max_int : Int64 = @int.max_value.to_int64()
 
-fn parse_num(self: Lexer) -> ParsedNum raise LexerError {
+let min_int : Int64 = @int.min_value.to_int64()
+
+fn Lexer::parse_num(self : Lexer) -> ParsedNum raise LexerError {
   let mut digits = ""
   let mut is_integral = true
   let mut i = self.index
-
   while i < self.input.length() {
     let char = self.input[i].to_char().unwrap()
     i += 1
-
     if is_digit(char) {
       digits += char.to_string()
       self.advance()
@@ -136,7 +135,6 @@ fn parse_num(self: Lexer) -> ParsedNum raise LexerError {
       if not(is_integral) {
         raise InvalidDoubleLiteral(digits + ".")
       }
-
       is_integral = false
       digits += "."
       self.advance()
@@ -144,7 +142,6 @@ fn parse_num(self: Lexer) -> ParsedNum raise LexerError {
       is_integral = false
       digits += char.to_string()
       self.advance()
-
       if self.matches('+') || self.matches('-') {
         digits += self.peek().to_string()
         self.advance()
@@ -154,13 +151,10 @@ fn parse_num(self: Lexer) -> ParsedNum raise LexerError {
       break
     }
   }
-
   let num = if is_integral {
     let mut suffix = ""
-
     while self.index < self.input.length() {
       let char = self.peek()
-
       if is_alphanumeric(char) {
         suffix += char.to_string().to_lower()
         self.advance()
@@ -168,63 +162,54 @@ fn parse_num(self: Lexer) -> ParsedNum raise LexerError {
         break
       }
     }
-    
     let value = parse_i64(digits)
-
-    let kind = match suffix {
+    let kind : IntKind = match suffix {
       "l" => LongK
       "ul" | "lu" => ULongK
-      "u" => {
+      "u" =>
         // if the value is out of range for an int, return a long
         if value > max_int || value < min_int {
           ULongK
         } else {
           UIntK
         }
-      }
-      "" => {
+      "" =>
         // if the value is out of range for an int, return a long
         if value > max_int || value < min_int {
           LongK
         } else {
           IntK
         }
-      }
       _ => raise InvalidIntegerLiteral(digits + suffix)
     }
-
     reinterpret_i64(value, kind)
   } else {
-    match (try? @strconv.parse_double(digits)) {
-      Ok(n) => {
-        let next_char = self.peek()
-        if is_identifier_start(next_char) {
-          raise InvalidDoubleLiteral(digits + next_char.to_string())
-        }
-
-        Double(n)
-      }
-      Err(err) => {
+    try @strconv.parse_double(digits) catch {
+      err =>
         match err {
-          StrConvError("value out of range") => {
+          StrConvError("value out of range") =>
             // round to infinity
-            if digits.contains_char('-') {
+            if digits.contains("-") {
               Double(@double.neg_infinity)
             } else {
               Double(@double.infinity)
             }
-          }
           _ => raise InvalidDoubleLiteral(digits)
         }
+    } noraise {
+      n => {
+        let next_char = self.peek()
+        if is_identifier_start(next_char) {
+          raise InvalidDoubleLiteral(digits + next_char.to_string())
+        }
+        Double(n)
       }
     }
   }
-
   // a constant cannot be followed by a dot
   if self.peek() == '.' {
     raise InvalidDoubleLiteral(digits + ".")
   }
-
   num
 }
 
@@ -521,15 +506,15 @@ fn Lexer::next(self: Lexer) -> LexerResult {
     }
     _ => {
       if is_digit(char) || char == '.' {
-        match (try? self.parse_num()) {
-          Err(error) => return Err(error)
-          Ok(value) => match value {
-            Int(n) => Ok(IntLiteral(n))
-            Long(n) => Ok(LongLiteral(n))
-            UnsignedInt(n) => Ok(UIntLiteral(n))
-            UnsignedLong(n) => Ok(ULongLiteral(n))
-            Double(n) => Ok(DoubleLiteral(n))
-          }
+        let value = try self.parse_num() catch {
+          error => return Err(error)
+        }
+        match value {
+          Int(n) => Ok(IntLiteral(n))
+          Long(n) => Ok(LongLiteral(n))
+          UnsignedInt(n) => Ok(UIntLiteral(n))
+          UnsignedLong(n) => Ok(ULongLiteral(n))
+          Double(n) => Ok(DoubleLiteral(n))
         }
       } else if is_identifier_start(char) {
         let identifier = self.parse_identifier()

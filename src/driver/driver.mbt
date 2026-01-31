@@ -1,11 +1,15 @@
 
+using @parse { type LexerError, type ParserError, type Token, type Program, type Lexer, type Parser }
+using @validate { type ValidationError, type SymbolTableEntry, validated }
+using @codegen { type TacBuilderError, type AsmBuilderError, type EmitterError, type TacProgram, type AsmProgram, type OperatingSystem, convert_prog, type Emitter }
+
 priv suberror CompilerError {
-  Lexer(@parse.LexerError)
-  Parser(@parse.ParserError)
-  Validator(@validate.ValidationError)
-  TacBuilder(@codegen.TacBuilderError)
-  AsmBuilder(@codegen.AsmBuilderError)
-  Emitter(@codegen.EmitterError)
+  Lexer(LexerError)
+  Parser(ParserError)
+  Validator(ValidationError)
+  TacBuilder(TacBuilderError)
+  AsmBuilder(AsmBuilderError)
+  Emitter(EmitterError)
 } derive(Show)
 
 fn read_source_file_char(index: Int) -> Char = "host" "read_source_file_char"
@@ -24,59 +28,56 @@ fn read_source_file() -> String {
   builder.to_string()
 }
 
-fn lex_stage(source: String) -> Array[@parse.Token] raise CompilerError {
-  let lexer = @parse.Lexer::new(source)
+fn lex_stage(source: String) -> Array[Token] raise CompilerError {
+  let lexer = Lexer::new(source)
 
-  match (try? lexer.tokenize()) {
-    Ok(tokens) => tokens
-    Err(error) => raise Lexer(error)
+  try lexer.tokenize() catch {
+    error => raise Lexer(error)
   }
 }
 
-fn parse_stage(source: String) -> @parse.Program raise CompilerError {
+fn parse_stage(source: String) -> Program raise CompilerError {
   let tokens = lex_stage(source)
-  let parser = @parse.Parser::new(tokens)
+  let parser = Parser::new(tokens)
 
-  match (try? parser.parse()) {
-    Ok(program) => program
-    Err(error) => raise Parser(error)
+  try parser.parse() catch {
+    error => raise Parser(error)
   }
 }
 
-fn validate_stage(source: String) -> (@parse.Program, Map[String, @validate.SymbolTableEntry]) raise CompilerError {
+fn validate_stage(source: String) -> (Program, Map[String, SymbolTableEntry]) raise CompilerError {
   let program = parse_stage(source)
 
-  match (try? @validate.validated(program)) {
-    Ok(res) => res
-    Err(error) => raise Validator(error)
+  try validated(program) catch {
+    error => raise Validator(error)
   }
 }
 
-fn tac_gen_stage(source: String) -> (@codegen.TacProgram, Map[String, @validate.SymbolTableEntry]) raise CompilerError {
+fn tac_gen_stage(source: String) -> (TacProgram, Map[String, SymbolTableEntry]) raise CompilerError {
   let (program, symbols) = validate_stage(source)
 
-  match (try? @codegen.convert_prog(program, symbols)) {
-    Ok(tac) => (tac, symbols)
-    Err(error) => raise TacBuilder(error)
+  let tac = try convert_prog(program, symbols) catch {
+    error => raise TacBuilder(error)
   }
+  (tac, symbols)
 }
 
-fn codegen_stage(source: String) -> (@codegen.AsmProgram, Map[String, @validate.SymbolTableEntry]) raise CompilerError {
+fn codegen_stage(source: String) -> (AsmProgram, Map[String, SymbolTableEntry]) raise CompilerError {
   let (program, symbols) = tac_gen_stage(source)
   
-  match (try? program.to_asm(symbols)) {
-    Ok(asm_prog) => (asm_prog, symbols)
-    Err(error) => raise AsmBuilder(error)
+  let asm_prog = try program.to_asm(symbols) catch {
+    error => raise AsmBuilder(error)
   }
+  (asm_prog, symbols)
 }
 
-fn assemble(source: String, os~: @codegen.OperatingSystem) -> String raise CompilerError {
+fn assemble(source: String, os~: OperatingSystem) -> String raise CompilerError {
   let (program, symbols) = codegen_stage(source)
-  let emitter = @codegen.Emitter::new(os, symbols)
-  match (try? emitter.emit_program(program)) {
-    Ok(_) => Show::to_string(emitter)
-    Err(error) => raise Emitter(error)
+  let emitter = Emitter::new(os, symbols)
+  try emitter.emit_program(program) catch {
+    error => raise Emitter(error)
   }
+  Show::to_string(emitter)
 }
 
 fn output_string(s: String) -> Unit {
@@ -91,7 +92,7 @@ pub enum DriverStage {
   Lex; Parse; Validate; Tacky; CodeGen
 }
 
-fn compile(stage: DriverStage, os: @codegen.OperatingSystem) -> String raise CompilerError {
+fn compile(stage: DriverStage, os: OperatingSystem) -> String raise CompilerError {
   let source = read_source_file()
 
   match stage {
@@ -117,9 +118,10 @@ fn compile(stage: DriverStage, os: @codegen.OperatingSystem) -> String raise Com
   }
 }
 
-pub fn drive(stage: DriverStage, os: @codegen.OperatingSystem) -> Unit {
-  match (try? compile(stage, os)) {
-    Ok(output) => output_string("ok: \{output}")
-    Err(error) => output_string("err: \{error}")
+pub fn drive(stage: DriverStage, os: OperatingSystem) -> Unit {
+  try compile(stage, os) catch {
+    error => output_string("err: \{error}")
+  } noraise {
+    output => output_string("ok: \{output}")
   }
 }

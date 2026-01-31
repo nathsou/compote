@@ -81,14 +81,14 @@ pub enum BackendSymbolTableEntry {
   FunEntry(is_defined~: Bool)
 }
 
-pub fn size(self: AsmType) -> Int64 {
+pub fn AsmType::size(self: AsmType) -> Int64 {
   match self {
     LongWord => 4
     QuadWord => 8
   }
 }
 
-pub fn alignment(self: AsmType) -> Int64 {
+pub fn AsmType::alignment(self: AsmType) -> Int64 {
   match self {
     LongWord => 4
     QuadWord => 8
@@ -104,15 +104,15 @@ pub fn AsmType::suffix(self: AsmType) -> String {
 
 pub struct BackendSymbolTable(Map[String, BackendSymbolTableEntry])
 
-fn get_symbol_ty(self: BackendSymbolTable, name: String) -> AsmType raise {
-  match self.inner().get(name) {
+fn BackendSymbolTable::get_symbol_ty(self: BackendSymbolTable, name: String) -> AsmType raise {
+  match self.0.get(name) {
     Some(ObjEntry(ty~, is_static=_)) => ty
-    _ => raise Failure("symbol not found in symbol table")
+    _ => fail("symbol not found in symbol table")
   }
 }
 
-fn is_symbol_static(self: BackendSymbolTable, name: String) -> Bool {
-  match self.inner().get(name) {
+fn BackendSymbolTable::is_symbol_static(self: BackendSymbolTable, name: String) -> Bool {
+  match self.0.get(name) {
     Some(ObjEntry(ty=_, is_static~)) => is_static
     _ => false
   }

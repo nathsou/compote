@@ -293,7 +293,7 @@ fn preprocess(source_file: &str) -> io::Result<String> {
 }
 
 // Function to assemble the assembly code using clang
-fn assemble(assembly_code: &str, output_file_path: &str, libraries: &[&str]) -> io::Result<()> {
+fn assemble(assembly_code: &str, output_file_path: &str, _libraries: &[&str]) -> io::Result<()> {
     // Create a temporary file with the assembly code
     use std::fs::File;
     use std::io::Write;

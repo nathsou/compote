@@ -1,7 +1,8 @@
 
+
 pub struct AsmBuilder {
   instructions: Array[AsmInst]
-  symbols: Map[String, @validate.SymbolTableEntry]
+  symbols: Map[String, SymbolTableEntry]
 }
 
 pub suberror AsmBuilderError {
@@ -11,7 +12,7 @@ pub suberror AsmBuilderError {
   Unreachable(String)
 } derive(Show)
 
-pub fn AsmBuilder::new(symbols: Map[String, @validate.SymbolTableEntry]) -> AsmBuilder {
+pub fn AsmBuilder::new(symbols: Map[String, SymbolTableEntry]) -> AsmBuilder {
   { instructions: [], symbols }
 }
 
@@ -67,7 +68,7 @@ fn TacValue::to_operand(self: TacValue) -> AsmOperand {
   }
 }
 
-fn convert_type(ty: @parse.Type) -> AsmType raise AsmBuilderError {
+fn convert_type(ty: Type) -> AsmType raise AsmBuilderError {
   match ty {
     Int | UnsignedInt => LongWord
     Long | UnsignedLong => QuadWord
@@ -76,7 +77,7 @@ fn convert_type(ty: @parse.Type) -> AsmType raise AsmBuilderError {
   }
 }
 
-fn tacky_ty(self: AsmBuilder, value: TacValue) -> @parse.Type raise AsmBuilderError {
+fn AsmBuilder::tacky_ty(self: AsmBuilder, value: TacValue) -> Type raise AsmBuilderError {
   match value {
     Constant(c) => c.ty()
     Variable(name) => {
@@ -88,13 +89,13 @@ fn tacky_ty(self: AsmBuilder, value: TacValue) -> @parse.Type raise AsmBuilderEr
   }
 }
 
-fn asm_ty(self: AsmBuilder, value: TacValue) -> AsmType raise AsmBuilderError {
+fn AsmBuilder::asm_ty(self: AsmBuilder, value: TacValue) -> AsmType raise AsmBuilderError {
   convert_type(self.tacky_ty(value))
 }
 
 let arg_regs: Array[AsmReg] = [DI, SI, DX, CX, R8, R9]
 
-fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
+fn AsmBuilder::convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
   match inst {
     Return(value) => {
       let src = value.to_operand()
@@ -222,7 +223,7 @@ fn convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBuilderError {
     Call(name~, args~, dst~) => {
       // split_at currently panics if the index is out of bounds
       let (reg_args, stack_args) = if args.length() > 6 {
-        args.split_at(6)
+        (args[:6], args[6:])
       } else {
         (args, [])
       }
@@ -287,7 +288,7 @@ fn align_to_16_bytes(size: Int64) -> Int64 {
   }
 }
 
-pub fn TacFunctionDef::to_asm(self: TacFunctionDef, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmFunctionDef raise AsmBuilderError {
+pub fn TacFunctionDef::to_asm(self: TacFunctionDef, symbols: Map[String, SymbolTableEntry]) -> AsmFunctionDef raise AsmBuilderError {
   let builder = AsmBuilder::new(symbols)
 
   // placeholder for stack allocation
@@ -334,9 +335,8 @@ pub fn TacFunctionDef::to_asm(self: TacFunctionDef, symbols: Map[String, @valida
   }
 
   let pass1 = ReplacePseudoRegsPass::new(BackendSymbolTable(backend_symbols))
-  let insts1 = match (try? pass1.run(builder.instructions)) {
-    Ok(insts) => insts
-    Err(_) => raise AsmBuilderError::Unreachable("replace pseudo regs pass failed")
+  let insts1 = try pass1.run(builder.instructions) catch {
+    _ => raise AsmBuilderError::Unreachable("replace pseudo regs pass failed")
   }
 
   let aligned_stack_size = align_to_16_bytes(pass1.stack_offset.abs())
@@ -354,7 +354,7 @@ pub fn TacFunctionDef::to_asm(self: TacFunctionDef, symbols: Map[String, @valida
   }
 }
 
-pub fn TacProgram::to_asm(self: TacProgram, symbols: Map[String, @validate.SymbolTableEntry]) -> AsmProgram raise AsmBuilderError {
+pub fn TacProgram::to_asm(self: TacProgram, symbols: Map[String, SymbolTableEntry]) -> AsmProgram raise AsmBuilderError {
   let functions: Array[AsmFunctionDef] = []
   let static_vars: Array[AsmStaticVarDef] = []
 

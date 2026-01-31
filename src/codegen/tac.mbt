@@ -1,4 +1,6 @@
 
+
+
 pub enum TacValue {
   Constant(@parse.Constant)
   Variable(String)
@@ -32,7 +34,7 @@ pub struct TacFunctionDef {
 
 pub enum TacTopLevel {
   Function(TacFunctionDef)
-  StaticVar(name~: String, global~: Bool, init~: @validate.StaticInit, ty~: @parse.Type)
+  StaticVar(name~: String, global~: Bool, init~: StaticInit, ty~: Type)
 } derive(Show)
 
 pub struct TacProgram {

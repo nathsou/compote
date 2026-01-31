@@ -24,7 +24,7 @@ pub enum Token {
   Identifier(String)
 } derive(Eq)
 
-pub fn to_binop(self: Token) -> BinaryOp? {
+pub fn Token::to_binop(self: Token) -> BinaryOp? {
   match self {
     Plus => Some(Add)
     Minus => Some(Sub)
@@ -60,14 +60,14 @@ pub fn to_binop(self: Token) -> BinaryOp? {
   }
 }
 
-pub fn is_type_specifier(self: Token) -> Bool {
+pub fn Token::is_type_specifier(self: Token) -> Bool {
   match self {
     Int | Long | Unsigned | Signed | Double => true
     _ => false
   }
 }
 
-pub fn is_specifier(self: Token) -> Bool {
+pub fn Token::is_specifier(self: Token) -> Bool {
   match self {
     Extern | Static => true
     _ => self.is_type_specifier()

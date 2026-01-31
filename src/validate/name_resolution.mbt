@@ -1,4 +1,3 @@
-
 // A pass that resolves all the names and labels in the program
 pub struct NameResolutionPass {
   mut next_var_id: Int
@@ -27,7 +26,7 @@ pub suberror NameResolutionError {
   Unreachable(String)
 } derive(Show)
 
-fn is_lvalue(expr: @parse.Expr) -> Bool {
+fn is_lvalue(expr: Expr) -> Bool {
   match expr {
     Variable(_) => true
     _ => false
@@ -62,7 +61,7 @@ fn Env::pop(self: Env) -> Unit {
 }
 
 fn Env::is_top_level(self: Env) -> Bool {
-  self.identifiers.parent.is_empty()
+  self.identifiers.parent is None
 }
 
 fn NameResolutionPass::next_var_name(self: NameResolutionPass, prefix: String) -> String {
@@ -95,18 +94,18 @@ fn NameResolutionPass::next_switch_entry(self: NameResolutionPass, prefix: Strin
   label_name
 }
 
-fn NameResolutionPass::resolve_expr(self: NameResolutionPass, expr: @parse.Expr, env: Env) -> @parse.Expr raise NameResolutionError {
+fn NameResolutionPass::resolve_expr(self: NameResolutionPass, expr: Expr, env: Env) -> Expr raise NameResolutionError {
   match expr {
     Variable(name~, ty~) => {
       match env.identifiers.resolve(name) {
-        Some({ new_name, has_linkage: _ }) => @parse.Variable(name=new_name, ty=ty)
+        Some({ new_name, has_linkage: _ }) => Variable(name=new_name, ty=ty)
         None => raise UndeclaredVariable(name)
       }
     }
     Cast(target_ty~, expr~, ty~) => {
-      @parse.Cast(target_ty~, expr=self.resolve_expr(expr, env), ty~)
+      Cast(target_ty~, expr=self.resolve_expr(expr, env), ty~)
     }
-    Constant(val~, ty~) => @parse.Constant(val~, ty~)
+    Constant(val~, ty~) => Constant(val~, ty~)
     Unary(op~, expr~, ty~) => {
       match op {
         Inc(_) | Dec(_) => {
@@ -117,18 +116,18 @@ fn NameResolutionPass::resolve_expr(self: NameResolutionPass, expr: @parse.Expr,
         _ => ()
       }
 
-      @parse.Unary(op~, expr=self.resolve_expr(expr, env), ty~)
+      Unary(op~, expr=self.resolve_expr(expr, env), ty~)
     }
-    Binary(op~, lhs~, rhs~, ty~) => @parse.Binary(op~, lhs=self.resolve_expr(lhs, env), rhs=self.resolve_expr(rhs, env), ty~)
+    Binary(op~, lhs~, rhs~, ty~) => Binary(op~, lhs=self.resolve_expr(lhs, env), rhs=self.resolve_expr(rhs, env), ty~)
     Assignment(op~, lhs~, rhs~, ty~) => {
       if not(is_lvalue(lhs)) {
         raise InvalidLvalue(Show::to_string(lhs))
       }
 
-      @parse.Expr::Assignment(op~, lhs=self.resolve_expr(lhs, env), rhs=self.resolve_expr(rhs, env), ty~)
+      Assignment(op~, lhs=self.resolve_expr(lhs, env), rhs=self.resolve_expr(rhs, env), ty~)
     }
     Conditional(cond~, then~, otherwise~, ty~) => {
-      @parse.Conditional(
+      Conditional(
         cond=self.resolve_expr(cond, env),
         then=self.resolve_expr(then, env),
         otherwise=self.resolve_expr(otherwise, env),
@@ -144,7 +143,7 @@ fn NameResolutionPass::resolve_expr(self: NameResolutionPass, expr: @parse.Expr,
             new_args.push(self.resolve_expr(arg, env))
           }
 
-          @parse.Call(name=new_name, args=new_args, ty~)
+          Call(name=new_name, args=new_args, ty~)
         }
         None => raise UndeclaredFunction(name)
       }
@@ -152,7 +151,7 @@ fn NameResolutionPass::resolve_expr(self: NameResolutionPass, expr: @parse.Expr,
   }
 }
 
-fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse.Stmt raise NameResolutionError {
+fn NameResolutionPass::resolve_stmt(self: NameResolutionPass, stmt: Stmt, env: Env) -> Stmt raise NameResolutionError {
   match stmt {
     Return(expr) => Return(self.resolve_expr(expr, env))
     Expression(expr) => Expression(self.resolve_expr(expr, env))
@@ -225,7 +224,7 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
       let loop_label = self.next_loop_label("for")
       for_env.push(Loop(loop_label))
 
-      let new_init: @parse.ForInit = match init {
+      let new_init: ForInit = match init {
         InitEmpty => InitEmpty
         InitDecl(decl) => {
           InitDecl(self.resolve_local_variable_decl(decl, for_env))
@@ -272,12 +271,12 @@ fn resolve_stmt(self: NameResolutionPass, stmt: @parse.Stmt, env: Env) -> @parse
   }
 }
 
-fn resolve_file_scope_variable_decl(decl: @parse.VariableDecl, env: Env) -> @parse.VariableDecl {
-  env.identifiers.declare_shadowing(decl.name, { new_name: decl.name, has_linkage: true})
+fn resolve_file_scope_variable_decl(decl: VariableDecl, env: Env) -> VariableDecl {
+  env.identifiers.add_shadowing(decl.name, { new_name: decl.name, has_linkage: true})
   decl
 }
 
-fn resolve_local_variable_decl(self: NameResolutionPass, decl: @parse.VariableDecl, env: Env) -> @parse.VariableDecl raise NameResolutionError {
+fn NameResolutionPass::resolve_local_variable_decl(self: NameResolutionPass, decl: VariableDecl, env: Env) -> VariableDecl raise NameResolutionError {
   let { storage_class, ty, name, value } = decl
 
   if env.identifiers.contains_local(name) {
@@ -292,12 +291,12 @@ fn resolve_local_variable_decl(self: NameResolutionPass, decl: @parse.VariableDe
   }
 
   if storage_class == Some(Extern) {
-    env.identifiers.declare_shadowing(name, { new_name: name, has_linkage: true })
+    env.identifiers.add_shadowing(name, { new_name: name, has_linkage: true })
     return decl
   }
 
   let new_name = self.next_var_name(name)
-  env.identifiers.declare_shadowing(name, { new_name, has_linkage: false })
+  env.identifiers.add_shadowing(name, { new_name, has_linkage: false })
 
   match value {
     Some(expr) => {
@@ -313,7 +312,7 @@ enum DeclarationScope {
   BlockScope
 } derive(Eq)
 
-fn resolve_decl(self: NameResolutionPass, decl: @parse.Decl, env: Env, scope~: DeclarationScope) -> @parse.Decl raise NameResolutionError {
+fn NameResolutionPass::resolve_decl(self: NameResolutionPass, decl: Decl, env: Env, scope~: DeclarationScope) -> Decl raise NameResolutionError {
   match decl {
     VarDecl(decl) => {
       VarDecl(match scope {
@@ -322,7 +321,7 @@ fn resolve_decl(self: NameResolutionPass, decl: @parse.Decl, env: Env, scope~: D
       })
     }
     FunDecl(decl) => {
-      if not(decl.body.is_empty()) && not(env.is_top_level()) {
+      if not(decl.body is None) && not(env.is_top_level()) {
         raise FunctionDefinitionShouldBeTopLevel(decl.name)
       }
 
@@ -335,29 +334,28 @@ fn resolve_decl(self: NameResolutionPass, decl: @parse.Decl, env: Env, scope~: D
   }
 }
 
-fn resolved_param(self: NameResolutionPass, param: @parse.FunctionParam, env: Env) -> @parse.FunctionParam raise NameResolutionError {
+fn NameResolutionPass::resolved_param(self: NameResolutionPass, param: FunctionParam, env: Env) -> FunctionParam raise NameResolutionError {
   let new_name = self.next_param_name(param.name)
 
-  match (try? env.identifiers.declare(param.name, { new_name, has_linkage: false })) {
-    Ok(_) => ()
-    Err(MemberAlreadyDeclared) => raise VariableAlreadyDeclared(param.name)
+  try env.identifiers.add(param.name, { new_name, has_linkage: false }) catch {
+    MemberAlreadyDeclared => raise VariableAlreadyDeclared(param.name)
   }
 
   { ty: param.ty, name: new_name }
 }
 
-fn resolve_block(self: NameResolutionPass, block: Array[@parse.BlockItem], env: Env) -> Array[@parse.BlockItem] raise NameResolutionError {
+fn NameResolutionPass::resolve_block(self: NameResolutionPass, block: Array[BlockItem], env: Env) -> Array[BlockItem] raise NameResolutionError {
   let new_block = []
 
   for item in block {
     match item {
-      Decl(decl) => {
+      BlockItem::Decl(decl) => {
         let new_decl = self.resolve_decl(decl, env, scope=BlockScope)
-        new_block.push(@parse.BlockItem::Decl(new_decl))
+        new_block.push(BlockItem::Decl(new_decl))
       }
-      Stmt(stmt) => {
+      BlockItem::Stmt(stmt) => {
         let new_stmt = self.resolve_stmt(stmt, env)
-        new_block.push(@parse.BlockItem::Stmt(new_stmt))
+        new_block.push(BlockItem::Stmt(new_stmt))
       }
     }
   }
@@ -365,7 +363,7 @@ fn resolve_block(self: NameResolutionPass, block: Array[@parse.BlockItem], env: 
   new_block
 }
 
-fn collect_block_labels(self: NameResolutionPass, block: Array[@parse.BlockItem], labels: Map[String, String]) -> Unit raise NameResolutionError {
+fn NameResolutionPass::collect_block_labels(self: NameResolutionPass, block: Array[BlockItem], labels: Map[String, String]) -> Unit raise NameResolutionError {
   for item in block {
     match item {
       Decl(_) => ()
@@ -374,7 +372,7 @@ fn collect_block_labels(self: NameResolutionPass, block: Array[@parse.BlockItem]
   }
 }
 
-fn collect_stmt_labels(self: NameResolutionPass, stmt: @parse.Stmt, labels: Map[String, String]) -> Unit raise NameResolutionError {
+fn NameResolutionPass::collect_stmt_labels(self: NameResolutionPass, stmt: Stmt, labels: Map[String, String]) -> Unit raise NameResolutionError {
   match stmt {
     Return(_) => ()
     Expression(_) => ()
@@ -421,7 +419,7 @@ fn collect_stmt_labels(self: NameResolutionPass, stmt: @parse.Stmt, labels: Map[
   }
 }
 
-fn collect_function_def_labels(self: NameResolutionPass, func: @parse.FunctionDecl, labels: Map[String, String]) -> Unit raise NameResolutionError {
+fn NameResolutionPass::collect_function_def_labels(self: NameResolutionPass, func: FunctionDecl, labels: Map[String, String]) -> Unit raise NameResolutionError {
   match func.body {
     None => ()
     Some(body) => self.collect_block_labels(body, labels)
@@ -429,7 +427,7 @@ fn collect_function_def_labels(self: NameResolutionPass, func: @parse.FunctionDe
 }
 
 // Collect all the labels declared in this function (a goto can reference a label declared later in the function)
-fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, env: Env) -> @parse.FunctionDecl raise NameResolutionError {
+fn NameResolutionPass::resolve_function_decl(self: NameResolutionPass, func: FunctionDecl, env: Env) -> FunctionDecl raise NameResolutionError {
   let { storage_class, return_ty, name, params, body } = func
 
   env.goto_labels.clear() // Reset the goto labels for this function
@@ -442,7 +440,7 @@ fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, en
     }
   }
 
-  env.identifiers.declare_shadowing(name, { new_name: name, has_linkage: true })
+  env.identifiers.add_shadowing(name, { new_name: name, has_linkage: true })
 
   let body_env = env.child()
   let new_params = []
@@ -461,7 +459,7 @@ fn resolve_function_decl(self: NameResolutionPass, func: @parse.FunctionDecl, en
   { storage_class, return_ty, name, params: new_params, body: new_body }
 }
 
-pub fn resolved(self: NameResolutionPass, program: @parse.Program) -> @parse.Program raise NameResolutionError {
+pub fn NameResolutionPass::resolved(self: NameResolutionPass, program: Program) -> Program raise NameResolutionError {
   let decls = []
   let env = Env::new()
 

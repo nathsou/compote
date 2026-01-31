@@ -1,9 +1,8 @@
-
 pub struct SwitchContext {
   label: String
-  cases: @hashset.T[@parse.Constant]
+  cases: @hashset.HashSet[Constant]
   mut has_default: Bool
-  ty: @parse.Type
+  ty: Type
 }
 
 pub suberror SwitchResolutionError {
@@ -11,11 +10,11 @@ pub suberror SwitchResolutionError {
   MultipleDefaultInSwitch
   CaseExprMustBeConstant
   CaseExprTypeMismatch
-  DuplicateCase(@parse.Constant)
+  DuplicateCase(Constant)
   UnresolvedSwitchLabel
 } derive(Show)
 
-fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt raise SwitchResolutionError {
+fn analyze_stmt(stmt: Stmt, ctx: SwitchContext?) -> Stmt raise SwitchResolutionError {
   match stmt {
     Default(body~) => {
       let ctx = match ctx {
@@ -44,9 +43,8 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt raise Swi
         _ => raise CaseExprMustBeConstant
       }
 
-      let fitted_val = match (try? val.fit_val_to_type(ctx.ty)) {
-        Ok(c) => c
-        Err(_) => raise CaseExprTypeMismatch
+      let fitted_val = try val.fit_val_to_type(ctx.ty) catch {
+        _ => raise CaseExprTypeMismatch
       }
 
       if ctx.cases.contains(fitted_val) {
@@ -73,7 +71,7 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt raise Swi
       }
 
       let new_body = analyze_stmt(body, Some(new_ctx))
-      let cases_count = new_ctx.cases.size() + (if new_ctx.has_default { 1 } else { 0 })
+      let cases_count = new_ctx.cases.length() + (if new_ctx.has_default { 1 } else { 0 })
 
       Switch(expr~, body=new_body, label=Some(label), cases_count~)
     }
@@ -110,7 +108,7 @@ fn analyze_stmt(stmt: @parse.Stmt, ctx: SwitchContext?) -> @parse.Stmt raise Swi
   }
 }
 
-fn analyze_block_item(item: @parse.BlockItem, ctx: SwitchContext?) -> @parse.BlockItem raise SwitchResolutionError {
+fn analyze_block_item(item: BlockItem, ctx: SwitchContext?) -> BlockItem raise SwitchResolutionError {
   match item {
     Stmt(stmt) => {
       let new_stmt = analyze_stmt(stmt, ctx)
@@ -120,7 +118,7 @@ fn analyze_block_item(item: @parse.BlockItem, ctx: SwitchContext?) -> @parse.Blo
   }
 }
 
-fn analyze_block(block: Array[@parse.BlockItem], ctx: SwitchContext?) -> Array[@parse.BlockItem] raise SwitchResolutionError {
+fn analyze_block(block: Array[BlockItem], ctx: SwitchContext?) -> Array[BlockItem] raise SwitchResolutionError {
   let new_block = []
 
   for item in block {
@@ -130,7 +128,7 @@ fn analyze_block(block: Array[@parse.BlockItem], ctx: SwitchContext?) -> Array[@
   new_block
 }
 
-fn analyze_function_def(f: @parse.FunctionDecl) -> @parse.FunctionDecl raise SwitchResolutionError {
+fn analyze_function_def(f: FunctionDecl) -> FunctionDecl raise SwitchResolutionError {
   let new_body = match f.body {
     Some(body) => Some(analyze_block(body, None))
     None => None
@@ -145,14 +143,14 @@ fn analyze_function_def(f: @parse.FunctionDecl) -> @parse.FunctionDecl raise Swi
   }
 }
 
-fn analyze_decl(decl: @parse.Decl) -> @parse.Decl raise SwitchResolutionError {
+fn analyze_decl(decl: Decl) -> Decl raise SwitchResolutionError {
   match decl {
     VarDecl(decl) => VarDecl(decl)
     FunDecl(decl) => FunDecl(analyze_function_def(decl))
   }
 }
 
-pub fn analyze_switch_stmts(program: @parse.Program) -> @parse.Program raise SwitchResolutionError {
+pub fn analyze_switch_stmts(program: Program) -> Program raise SwitchResolutionError {
   let new_decls = []
 
   for decl in program.decls {
