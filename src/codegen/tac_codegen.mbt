@@ -517,33 +517,25 @@ pub fn convert_prog(prog: Program, symbols: Map[String, SymbolTableEntry]) -> Ta
 
   // collect static variables
   for name, entry in symbols {
-    match entry {
-      Variable(ty~, attributes~) => {
-        match attributes {
-          StaticAttr(init~, global~) => {
-            match init {
-              Initial(init) => {
-                top_level.push(StaticVar(name~, global~, init~, ty~))
-              }
-              Tentative => {
-                let init: StaticInit = match ty {
-                  Int => IntInit(0)
-                  Long => LongInit(0)
-                  UnsignedInt => UIntInit(0)
-                  UnsignedLong => ULongInit(0)
-                  Double => DoubleInit(0)
-                  _ => raise TacBuilderError::Unreachable("unsupported static variable type")
-                }
-
-                top_level.push(StaticVar(name~, global~, init~, ty~))
-              }
-              NoInitializer => ()
-            }
-          }
-          _ => ()
+    if entry is Variable(ty~, attributes~) && attributes is StaticAttr(init~, global~) {
+      match init {
+        Initial(init) => {
+          top_level.push(StaticVar(name~, global~, init~, ty~))
         }
+        Tentative => {
+          let init: StaticInit = match ty {
+            Int => IntInit(0)
+            Long => LongInit(0)
+            UnsignedInt => UIntInit(0)
+            UnsignedLong => ULongInit(0)
+            Double => DoubleInit(0)
+            _ => raise TacBuilderError::Unreachable("unsupported static variable type")
+          }
+
+          top_level.push(StaticVar(name~, global~, init~, ty~))
+        }
+        NoInitializer => ()
       }
-      _ => ()
     }
   }
 

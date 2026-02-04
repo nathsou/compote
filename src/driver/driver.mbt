@@ -89,7 +89,7 @@ fn output_string(s: String) -> Unit {
 }
 
 pub enum DriverStage {
-  Lex; Parse; Validate; Tacky; CodeGen
+  Lex = 0; Parse; Validate; Tacky; CodeGen; Assemble
 }
 
 fn compile(stage: DriverStage, os: OperatingSystem) -> String raise CompilerError {
@@ -113,6 +113,10 @@ fn compile(stage: DriverStage, os: OperatingSystem) -> String raise CompilerErro
       Show::to_string(program)
     }
     CodeGen => {
+      let (program, _) = codegen_stage(source)
+      Show::to_string(program)
+    }
+    Assemble => {
       assemble(source, os~)
     }
   }

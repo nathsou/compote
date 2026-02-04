@@ -8,7 +8,19 @@ pub(all) enum StaticInit {
   IntInit(Int); LongInit(Int64)
   UIntInit(UInt); ULongInit(UInt64)
   DoubleInit(Double)
-} derive(Show, Eq)
+} derive(Show)
+
+pub impl Eq for StaticInit with equal(self: StaticInit, other: StaticInit) -> Bool {
+  match (self, other) {
+    (IntInit(a), IntInit(b)) => a == b
+    (LongInit(a), LongInit(b)) => a == b
+    (UIntInit(a), UIntInit(b)) => a == b
+    (ULongInit(a), ULongInit(b)) => a == b
+    // Handles 0.0 and -0.0 being bitwise different but numerically equal
+    (DoubleInit(a), DoubleInit(b)) => a.reinterpret_as_uint64() == b.reinterpret_as_uint64()
+    _ => false
+  }
+}
 
 pub enum InitialValue {
   Tentative; Initial(StaticInit); NoInitializer

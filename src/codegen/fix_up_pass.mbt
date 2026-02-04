@@ -14,10 +14,13 @@ fn is_larger_than_u32(n: Int64) -> Bool {
 fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
   match inst {
      // some instructions with stack addresses as both operands are invalid
-    Mov(src=Stack(_) | Data(_) as src, dst=Stack(_) | Data(_) as dst, ty~) => [
-      Mov(src~, dst=Reg(R10), ty~),
-      Mov(src=Reg(R10), dst~, ty~),
-    ]
+    Mov(src=Stack(_) | Data(_) as src, dst=Stack(_) | Data(_) as dst, ty~) => {
+      let tmp_reg = if ty is Double { XMM14 } else { R10 }
+      [
+        Mov(src~, dst=Reg(tmp_reg), ty~),
+        Mov(src=Reg(tmp_reg), dst~, ty~),
+      ]
+    }
     // Mov cannot move a large immediate to a memory location
     Mov(src=Imm(n) as src, dst=Stack(_) | Data(_) as dst, ty=QuadWord) => {
       if not(fits_in_i32(n)) {
@@ -70,7 +73,7 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
     }
     Binary(op=Mul, src~, dst~, ty~) => {
       let is_large_src_imm = match src {
-        Imm(n) => not(fits_in_i32(n))
+        Imm(n) => !fits_in_i32(n)
         _ => false
       }
 
@@ -103,7 +106,7 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
     }
     Binary(op~, src~, dst~, ty~) => {
       let is_large_src_imm = match src {
-        Imm(n) => not(fits_in_i32(n))
+        Imm(n) => !fits_in_i32(n)
         _ => false
       }
 
@@ -113,6 +116,13 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
           [
             Mov(src~, dst=Reg(R10), ty=QuadWord),
             Binary(op~, src=Reg(R10), dst~, ty=QuadWord),
+          ]
+        }
+        (Double, _, _, _, _) => {
+          [
+            Mov(src~, dst=Reg(XMM15), ty=Double),
+            Binary(op~, src=Reg(XMM15), dst=Reg(XMM15), ty=Double),
+            Mov(src=Reg(XMM15), dst~, ty=Double),
           ]
         }
         // can't use memory addresses for both operands
@@ -134,9 +144,14 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
       Mov(src=Imm(n), dst=Reg(R10), ty~),
       Div(src=Reg(R10), ty~),
     ]
+    Cmp(src=_, dst=Reg(_), ty=Double) => [inst]
+    Cmp(src~, dst~, ty=Double) => [
+      Mov(src~, dst=Reg(XMM15), ty=Double),
+      Cmp(src=Reg(XMM15), dst~, ty=Double),
+    ]
     Cmp(src~, dst~, ty~) => {
       let is_large_src_imm = match src {
-        Imm(n) => not(fits_in_i32(n))
+        Imm(n) => !fits_in_i32(n)
         _ => false
       }
 
@@ -173,7 +188,7 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
       }
     }
     Push(Imm(n) as src) => {
-      if not(fits_in_i32(n)) {
+      if !fits_in_i32(n) {
         [
           Mov(src~, dst=Reg(R10), ty=QuadWord),
           Push(Reg(R10)),
@@ -182,6 +197,35 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
         [inst]
       }
     }
+    // cvttsd2si's dst operand must be a register
+    Cvttsd2si(src~, dst=(Stack(_) | Data(_)) as dst, dst_ty~) => [
+      Cvttsd2si(src~, dst=Reg(R11), dst_ty~),
+      Mov(src=Reg(R11), dst~, ty=dst_ty),
+    ]
+    Cvtsi2sd(src~, dst=(Stack(_) | Data(_)) as dst, src_ty~) => {
+      let is_src_const = src is Imm(_)
+      let is_dst_mem = dst is (Stack(_) | Data(_))
+
+      if is_src_const && is_dst_mem {
+        [
+          Mov(src~, dst=Reg(R10), ty=src_ty),
+          Cvtsi2sd(src_ty~, src=Reg(R10), dst=Reg(XMM15)),
+          Mov(src=Reg(XMM15), dst~, ty=Double),
+        ]
+      } else if is_src_const {
+        [
+          Mov(src~, dst=Reg(R10), ty=src_ty),
+          Cvtsi2sd(src_ty~, src=Reg(R10), dst~),
+        ]
+      } else if is_dst_mem {
+        [
+          Cvtsi2sd(src_ty~, src~, dst=Reg(XMM15)),
+          Mov(src=Reg(XMM15), dst~, ty=Double),
+        ]
+      } else {
+        [inst]
+      }
+    }  
     _ => [inst]
   }
 }

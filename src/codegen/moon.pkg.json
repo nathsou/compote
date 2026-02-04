@@ -2,7 +2,8 @@
     "import": [
       "moonbitlang/core/int",
       "nathsou/compote/parse",
-      "nathsou/compote/validate"
+      "nathsou/compote/validate",
+      "moonbitlang/core/int64"
     ],
     "warn-list": "-6"
 }

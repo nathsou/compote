@@ -115,6 +115,7 @@ fn AsmOperand::asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem
         Long => "%esp"
         Quad => "%rsp"
       }
+      _ => raise EmitterError::Unreachable("Unhandled AsmReg in asm_reg_size")
     }
     RegSize(reg, size) => Reg(reg).asm_reg_size(size, os)
     Stack(offset) => "\{offset}(%rbp)"
@@ -127,6 +128,7 @@ fn AsmOperand::fmt(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String
   let size = match ty {
     LongWord => Long
     QuadWord => Quad
+    Double => panic()
   }
 
   self.asm_reg_size(size, os)
@@ -136,6 +138,7 @@ fn AsmUnaryOp::mnemonic(self: AsmUnaryOp) -> String {
   match self {
     Neg => "neg"
     BitwiseNot => "not"
+    Shr => "shr"
   }
 }
 
@@ -151,6 +154,7 @@ fn AsmBinaryOp::mnemonic(self: AsmBinaryOp) -> String {
     And => "and"
     Or => "or"
     Xor => "xor"
+    _ => panic()
   }
 }
 
@@ -202,6 +206,7 @@ fn Emitter::emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
       match ty {
         LongWord => self.emit("cdq")
         QuadWord => self.emit("cqo")
+        Double => panic()
       }
     }
     Jmp(target) => {
@@ -239,6 +244,7 @@ fn Emitter::emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
       self.emit("popq %rbp")
       self.emit("ret")
     }
+    _ => raise EmitterError::Unreachable("Unhandled AsmInst in Emitter")
   }
 }
 

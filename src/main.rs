@@ -16,6 +16,7 @@ enum DriverStage {
     Validate,
     Tacky,
     Codegen,
+    Assemble,
 }
 
 enum OperatingSystem {
@@ -84,8 +85,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         DriverStage::Validate
     } else if matches.is_present("tacky") {
         DriverStage::Tacky
-    } else {
+    } else if matches.is_present("codegen") {
         DriverStage::Codegen
+    } else {
+        DriverStage::Assemble
     };
 
     // Determine the operating system
@@ -202,6 +205,7 @@ fn process_source_file(
         DriverStage::Validate => 2,
         DriverStage::Tacky => 3,
         DriverStage::Codegen => 4,
+        DriverStage::Assemble => 5,
     };
 
     let os_param = match os {

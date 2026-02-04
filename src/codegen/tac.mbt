@@ -1,6 +1,4 @@
 
-
-
 pub enum TacValue {
   Constant(@parse.Constant)
   Variable(String)
@@ -35,6 +33,7 @@ pub struct TacFunctionDef {
 pub enum TacTopLevel {
   Function(TacFunctionDef)
   StaticVar(name~: String, global~: Bool, init~: StaticInit, ty~: Type)
+  StaticConst(name~: String, init~: StaticInit, ty~: Type)
 } derive(Show)
 
 pub struct TacProgram {
@@ -62,6 +61,7 @@ pub impl Show for TacProgram with output(self, logger: &Logger) {
       StaticVar(name~, global=_, init~, ty=_) => {
         logger.write_string("static \{name} = \{init}\n")
       }
+      StaticConst(..) => panic()
     }
   }
 }

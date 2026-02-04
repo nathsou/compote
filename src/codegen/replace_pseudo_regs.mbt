@@ -84,6 +84,16 @@ fn ReplacePseudoRegsPass::rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmIns
       Div(src~, ty~)
     }
     Cdq(ty~) => Cdq(ty~)
+    Cvtsi2sd(src_ty~, src~, dst~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Cvtsi2sd(src_ty~, src~, dst~)
+    }
+    Cvttsd2si(dst_ty~, src~, dst~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Cvttsd2si(dst_ty~, src~, dst~)
+    }
     Jmp(target) => Jmp(target)
     JmpCond(cond~, target~) => JmpCond(cond~, target~)
     SetCond(cond~, dst~) => {
