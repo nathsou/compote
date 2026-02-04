@@ -133,7 +133,8 @@ fn process_source_file(
     let mut exe_path = env::current_exe()?;
     exe_path.pop();
     exe_path.pop();
-    let wasm_file_path = exe_path.join("wasm/release/build/driver/driver.wasm");
+    exe_path.pop();
+    let wasm_file_path = exe_path.join("_build/wasm/release/build/driver/driver.wasm");
 
     if !wasm_file_path.exists() {
         eprintln!("Error: WebAssembly file {} not found", wasm_file_path.display());
