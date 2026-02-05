@@ -71,6 +71,16 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
         Mov(src=Reg(R11), dst~, ty=QuadWord),
       ]
     }
+    Binary(op=Mul, src~, dst~, ty=Double) => {
+      match dst {
+        Reg(_) => [inst]
+        _ => [
+          Mov(src=dst, dst=Reg(XMM15), ty=Double),
+          Binary(op=Mul, src~, dst=Reg(XMM15), ty=Double),
+          Mov(src=Reg(XMM15), dst~, ty=Double),
+        ]
+      }
+    }
     Binary(op=Mul, src~, dst~, ty~) => {
       let is_large_src_imm = match src {
         Imm(n) => !fits_in_i32(n)
@@ -118,10 +128,11 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
             Binary(op~, src=Reg(R10), dst~, ty=QuadWord),
           ]
         }
+        (Double, _, _, _, Reg(_)) => [inst]
         (Double, _, _, _, _) => {
           [
-            Mov(src~, dst=Reg(XMM15), ty=Double),
-            Binary(op~, src=Reg(XMM15), dst=Reg(XMM15), ty=Double),
+            Mov(src=dst, dst=Reg(XMM15), ty=Double),
+            Binary(op~, src~, dst=Reg(XMM15), ty=Double),
             Mov(src=Reg(XMM15), dst~, ty=Double),
           ]
         }
@@ -146,8 +157,8 @@ fn fixup_rewrite_inst(inst: AsmInst) -> Array[AsmInst] {
     ]
     Cmp(src=_, dst=Reg(_), ty=Double) => [inst]
     Cmp(src~, dst~, ty=Double) => [
-      Mov(src~, dst=Reg(XMM15), ty=Double),
-      Cmp(src=Reg(XMM15), dst~, ty=Double),
+      Mov(src=dst, dst=Reg(XMM15), ty=Double),
+      Cmp(src~, dst=Reg(XMM15), ty=Double),
     ]
     Cmp(src~, dst~, ty~) => {
       let is_large_src_imm = match src {

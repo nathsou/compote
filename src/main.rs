@@ -59,15 +59,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(Arg::with_name("S")
              .short("S")
              .help("Compile only; do not assemble or link"))
-        .arg(Arg::with_name("library")
-             .short("l")
-             .takes_value(true)
-             .multiple(true)
-             .help("Link with the specified library"))
         .arg(Arg::with_name("source")
              .required(true)
              .multiple(true)
              .help("Input source files"))
+        .arg(Arg::with_name("library")
+             .short("l")
+             .takes_value(true)
+             .number_of_values(1)
+             .multiple(true)
+             .help("Link with the specified library"))
         .get_matches();
 
     // Collect the source files
@@ -298,7 +299,7 @@ fn preprocess(source_file: &str) -> io::Result<String> {
 }
 
 // Function to assemble the assembly code using clang
-fn assemble(assembly_code: &str, output_file_path: &str, _libraries: &[&str]) -> io::Result<()> {
+fn assemble(assembly_code: &str, output_file_path: &str, libraries: &[&str]) -> io::Result<()> {
     // Create a temporary file with the assembly code
     use std::fs::File;
     use std::io::Write;
@@ -316,10 +317,16 @@ fn assemble(assembly_code: &str, output_file_path: &str, _libraries: &[&str]) ->
     // Invoke clang to assemble and link
     let mut cmd = Command::new(CC);
 
-    let output = cmd.arg(&asm_file_path)
+    cmd.arg(&asm_file_path)
         .arg("-o")
-        .arg(output_file_path)
-        .output()?;
+        .arg(output_file_path);
+    
+    // Add library flags
+    for lib in libraries {
+        cmd.arg(format!("-l{}", lib));
+    }
+    
+    let output = cmd.output()?;
 
     // Clean up temporary file
     fs::remove_file(&asm_file_path)?;

@@ -40,21 +40,43 @@ fn convert_to(val: Constant, ty: Type) -> StaticInit raise TypeCheckerError {
       LongConst(n) => LongInit(n)
       UnsignedIntConst(n) => LongInit(n.to_int64())
       UnsignedLongConst(n) => LongInit(n.reinterpret_as_int64())
-      DoubleConst(x) => LongInit(x.reinterpret_as_int64())
+      DoubleConst(x) => LongInit(x.to_int64())
     }
     UnsignedInt => match val {
       IntConst(n) => UIntInit(n.reinterpret_as_uint())
       LongConst(n) => UIntInit(n.reinterpret_as_uint64().to_uint())
       UnsignedIntConst(n) => UIntInit(n)
       UnsignedLongConst(n) => UIntInit(n.to_uint())
-      DoubleConst(x) => UIntInit(x.reinterpret_as_uint64().to_uint())
+      DoubleConst(x) => {
+        // Convert double to unsigned int by first converting to int64 (which truncates),
+        // then reinterpreting those bits as uint
+        let as_i64 = x.to_int64()
+        UIntInit(as_i64.reinterpret_as_uint64().to_uint())
+      }
     }
     UnsignedLong => match val {
       IntConst(n) => ULongInit(n.to_uint64())
       LongConst(n) => ULongInit(n.reinterpret_as_uint64())
       UnsignedIntConst(n) => ULongInit(n.to_uint64())
       UnsignedLongConst(n) => ULongInit(n)
-      DoubleConst(x) => ULongInit(x.reinterpret_as_uint64())
+      DoubleConst(x) => {
+        // Handle conversion from double to unsigned long
+        // For values >= 2^63, we need special handling because to_int64() saturates
+        let two_pow_63 = 9223372036854775808.0  // 2^63
+        if x >= two_pow_63 {
+          // Subtract 2^63, convert to signed int64, then add back 2^63 as unsigned
+          let adjusted = x - two_pow_63
+          let as_i64 = adjusted.to_int64()
+          let as_u64 = as_i64.reinterpret_as_uint64()
+          // Add back 2^63 (which is 0x8000000000000000 in unsigned)
+          let result = as_u64 + 9223372036854775808UL
+          ULongInit(result)
+        } else {
+          // Normal case: value fits in signed int64 range
+          let as_i64 = x.to_int64()
+          ULongInit(as_i64.reinterpret_as_uint64())
+        }
+      }
     }
     Double => match val {
       IntConst(n) => DoubleInit(n.to_double())
@@ -408,9 +430,9 @@ pub fn TypeChecker::typed_expr(self: TypeChecker, expr: Expr) -> Expr raise Type
     Assignment(op~, lhs~, rhs~, ty=_) => {
       let lhs = self.typed_expr(lhs)
       let rhs = self.typed_expr(rhs)
-      let common_ty = get_common_type(lhs.ty(), rhs.ty())
+      let lhs_ty = lhs.ty()
 
-      if common_ty == Double {
+      if lhs_ty == Double {
         match op.binop() {
           Some(op) => {
             if is_illegal_binop_for_double(op) {
@@ -423,10 +445,12 @@ pub fn TypeChecker::typed_expr(self: TypeChecker, expr: Expr) -> Expr raise Type
 
       match op {
         AssignShiftLeft | AssignShiftRight => {
-          Assignment(op~, lhs~, rhs~, ty=Some(lhs.ty()))
+          // For shift assignments, rhs is converted to int
+          Assignment(op~, lhs~, rhs~, ty=Some(lhs_ty))
         }
         _ => {
-          Assignment(op~, lhs~, rhs=cast(rhs, common_ty), ty=Some(common_ty))
+          // For other assignments, convert rhs to lhs type
+          Assignment(op~, lhs~, rhs=cast(rhs, lhs_ty), ty=Some(lhs_ty))
         }
       }
     }
@@ -451,9 +475,8 @@ pub fn TypeChecker::typed_expr(self: TypeChecker, expr: Expr) -> Expr raise Type
           for i in 0..<args.length() {
             let arg = self.typed_expr(args[i])
             let param_ty = params[i]
-            let arg_ty = arg.ty()
-            let common_ty = get_common_type(param_ty, arg_ty)
-            converted_args.push(cast(arg, common_ty))
+            // Cast argument to parameter type (conversion as if by assignment)
+            converted_args.push(cast(arg, param_ty))
           }
 
           Call(name=name, args=converted_args, ty=Some(ret))

@@ -323,7 +323,8 @@ fn AsmBuilder::convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBu
       // retrieve the return value
       let dst_ty = self.asm_ty(dst)
       let dst = self.convert_val(dst)
-      self.emit(Mov(src=Reg(AX), dst~, ty=dst_ty))
+      let return_reg = if dst_ty == Double { XMM0 } else { AX }
+      self.emit(Mov(src=Reg(return_reg), dst~, ty=dst_ty))
     }
     IntToDouble(src~, dst~) => {
       let src_ty = self.asm_ty(src)
@@ -341,11 +342,12 @@ fn AsmBuilder::convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBu
       let src = self.convert_val(tac_src)
       let dst = self.convert_val(dst)
 
-      if !self.tacky_ty(tac_src).is_signed() {
-        self.emit(MovZeroExtend(src~, dst=Reg(AX)))
-        self.emit(Cvtsi2sd(src=Reg(AX), dst~, src_ty=QuadWord))
+      if self.tacky_ty(tac_src) == UnsignedInt {
+        // UInt (32-bit) fits in signed int64, so zero-extend and convert
+        self.emit(MovZeroExtend(src~, dst=Reg(R9)))
+        self.emit(Cvtsi2sd(src=Reg(R9), dst~, src_ty=QuadWord))
       } else {
-        // TODO: Detect if the AVX instruction set is available and use CVTSI2SD directly
+        // ULong (64-bit): need special handling for values >= 2^63
         let label1 = "_uint_to_double_pos_\{self.instructions.length()}"
         let label2 = "_uint_to_double_end_\{self.instructions.length()}"
         self.emit(Cmp(src=Imm(0), dst=src, ty=QuadWord))
@@ -353,13 +355,13 @@ fn AsmBuilder::convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBu
         self.emit(Cvtsi2sd(src~, dst~, src_ty=QuadWord))
         self.emit(Jmp(label2))
         self.emit(Label(label1))
-        self.emit(Mov(src~, dst=Reg(AX), ty=QuadWord))
-        self.emit(Mov(src=Reg(AX), dst=Reg(DX), ty=QuadWord))
-        self.emit(Unary(op=Shr, dst=Reg(DX), ty=QuadWord))
-        self.emit(Binary(op=And, src=Imm(1), dst=Reg(AX), ty=QuadWord))
-        self.emit(Binary(op=Or, src=Reg(AX), dst=Reg(DX), ty=QuadWord))
-        self.emit(Cvtsi2sd(src=Reg(DX), dst~, src_ty=QuadWord))
-        self.emit(Binary(op=Add, src~, dst~, ty=Double))
+        self.emit(Mov(src~, dst=Reg(R8), ty=QuadWord))
+        self.emit(Mov(src=Reg(R8), dst=Reg(R9), ty=QuadWord))
+        self.emit(Unary(op=Shr, dst=Reg(R9), ty=QuadWord))
+        self.emit(Binary(op=And, src=Imm(1), dst=Reg(R8), ty=QuadWord))
+        self.emit(Binary(op=Or, src=Reg(R8), dst=Reg(R9), ty=QuadWord))
+        self.emit(Cvtsi2sd(src=Reg(R9), dst~, src_ty=QuadWord))
+        self.emit(Binary(op=Add, src=dst, dst~, ty=Double))
         self.emit(Label(label2))
       }
     }
@@ -367,10 +369,12 @@ fn AsmBuilder::convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBu
       let src = self.convert_val(src)
       let dst = self.convert_val(tac_dst)
 
-      if !self.tacky_ty(tac_dst).is_signed() {
+      if self.tacky_ty(tac_dst) == UnsignedInt {
+        // UInt (32-bit): convert to signed int64, then truncate to 32-bit
         self.emit(Cvttsd2si(src~, dst=Reg(R9), dst_ty=QuadWord))
         self.emit(Mov(src=Reg(R9), dst~, ty=LongWord))
       } else {
+        // ULong (64-bit): need special handling for values >= 2^63
         let r = R9
         let x = XMM7
         let upper_bound_const = self.emit_static_const(DoubleInit(9223372036854775808.0), alignment=8)
