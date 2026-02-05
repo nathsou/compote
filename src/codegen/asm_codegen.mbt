@@ -28,7 +28,7 @@ fn AsmBuilder::emit_static_const(self: AsmBuilder, init: @validate.StaticInit, a
     }
   }
 
-  let name = "_static_const_\{self.static_consts.length()}"
+  let name = "static_const_\{self.static_consts.length()}"
   self.static_consts.push({ name, alignment, init })
   name
 }
@@ -203,7 +203,7 @@ fn AsmBuilder::convert_inst(self: AsmBuilder, inst: TacInst) -> Unit raise AsmBu
           self.emit(Mov(src=Imm(0), dst~, ty=dst_ty))
           self.emit(SetCond(cond=convert_cond_code(op, is_signed~, is_double=lhs_ty is Double), dst~))
         }
-        Div | Rem => {
+        (Div | Rem) if lhs_ty != Double => {
           let output_reg = if op == Div { AX } else { DX }
 
           if is_signed {

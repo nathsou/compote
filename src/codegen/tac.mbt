@@ -61,7 +61,9 @@ pub impl Show for TacProgram with output(self, logger: &Logger) {
       StaticVar(name~, global=_, init~, ty=_) => {
         logger.write_string("static \{name} = \{init}\n")
       }
-      StaticConst(..) => panic()
+      StaticConst(name~, init~, ty=_) => {
+        logger.write_string("const \{name} = \{init}\n")
+      }
     }
   }
 }

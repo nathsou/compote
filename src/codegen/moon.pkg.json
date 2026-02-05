@@ -3,7 +3,8 @@
       "moonbitlang/core/int",
       "nathsou/compote/parse",
       "nathsou/compote/validate",
-      "moonbitlang/core/int64"
+      "moonbitlang/core/int64",
+      "moonbitlang/core/set"
     ],
     "warn-list": "-6"
 }

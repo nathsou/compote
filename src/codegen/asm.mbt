@@ -109,11 +109,11 @@ pub fn AsmType::alignment(self: AsmType) -> Int64 {
   }
 }
 
-pub fn AsmType::suffix(self: AsmType) -> String raise EmitterError {
+pub fn AsmType::suffix(self: AsmType) -> String {
   match self {
     LongWord => "l"
     QuadWord => "q"
-    Double => raise EmitterError::Unreachable("no suffix for double type")
+    Double => "sd"
   }
 }
 
