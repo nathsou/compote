@@ -260,8 +260,8 @@ fn process_source_file(
                         // Clean up the .s file
                         fs::remove_file(&asm_file_path)?;
 
-                    } else if matches.is_present("codegen") || *stage != DriverStage::Codegen {
-                        // Print assembly code
+                    } else if *stage != DriverStage::Assemble {
+                        // Print assembly code for intermediate stages
                         println!("{asm_code}");
                     } else {
                         // Assemble the code into an executable

@@ -453,24 +453,24 @@ fn AsmBuilder::set_up_parameters(self: AsmBuilder, values: Array[TacValue]) -> U
   let classified = self.classify_parameters(values)
   let regs = get_arg_regs()
 
-  // store first 6 integer arguments in registers
+  // copy first 6 integer arguments from registers to local variables
   for i, ty_op in classified.int_reg_args {
     let (ty, operand) = ty_op
-    self.emit(Mov(src=operand, dst=Reg(regs.int_regs[i]), ty~))
+    self.emit(Mov(src=Reg(regs.int_regs[i]), dst=operand, ty~))
   }
 
-  // store first 8 double arguments in registers
+  // copy first 8 double arguments from registers to local variables
   for i, ty_op in classified.double_reg_args {
     let (ty, operand) = ty_op
-    self.emit(Mov(src=operand, dst=Reg(regs.double_regs[i]), ty~))
+    self.emit(Mov(src=Reg(regs.double_regs[i]), dst=operand, ty~))
   }
 
-  // push remaining arguments onto the stack in reverse order
+  // copy remaining arguments from stack to local variables
   let mut offset: Int64 = 16
 
   for ty_op in classified.stack_args {
     let (ty, operand) = ty_op
-    self.emit(Mov(src=operand, dst=Stack(offset), ty~))
+    self.emit(Mov(src=Stack(offset), dst=operand, ty~))
     offset += 8
   }
 }
