@@ -32,4 +32,4 @@ jobs:
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace/writing-a-c-compiler-tests \
             compote-ci:latest \
-            bash -lc "./test_compiler ../target/release/compote --chapter 13 --stage codegen --bitwise --compound"
+            bash -lc "./test_compiler ../target/release/compote --chapter 13 --bitwise --compound"
