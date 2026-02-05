@@ -188,26 +188,49 @@ fn TacBuilder::convert_expr(self: TacBuilder, expr: Expr) -> TacValue raise TacB
       dst
     }
     Assignment(op~, lhs=Variable(name~, ty=Some(lhs_ty)), rhs~, ty=Some(res_ty)) => {
-      let rhs = self.convert_expr(rhs)
+      let rhs_ty = rhs.ty()
+      let rhs_val = self.convert_expr(rhs)
       let dst = TacValue::Variable(name)
 
       match op.binop() {
         Some(op) => {
-          if lhs_ty == res_ty {
-            self.emit(Binary(op~, lhs=dst, rhs~, dst~))
+          if lhs_ty == res_ty && rhs_ty == res_ty {
+            // No conversions needed
+            self.emit(Binary(op~, lhs=dst, rhs=rhs_val, dst~))
           } else {
-            let tmp = TacValue::Variable(self.next_temp_var(res_ty))
-            // cast the result of the binary operation to the type of the left-hand side
-            self.emit(cast_expr(src=dst, dst=tmp, src_ty=lhs_ty, dst_ty=res_ty))
-            self.emit(Binary(op~, lhs=tmp, rhs~, dst=tmp))
-            // cast the result back to the type of the left-hand side
-            self.emit(cast_expr(src=tmp, dst~, src_ty=res_ty, dst_ty=lhs_ty))
+            // Need conversions
+            let tmp_lhs = TacValue::Variable(self.next_temp_var(res_ty))
+            let tmp_rhs = TacValue::Variable(self.next_temp_var(res_ty))
+            
+            // cast LHS to result type if needed
+            if lhs_ty != res_ty {
+              self.emit(cast_expr(src=dst, dst=tmp_lhs, src_ty=lhs_ty, dst_ty=res_ty))
+            } else {
+              self.emit(Copy(src=dst, dst=tmp_lhs))
+            }
+            
+            // cast RHS to result type if needed
+            if rhs_ty != res_ty {
+              self.emit(cast_expr(src=rhs_val, dst=tmp_rhs, src_ty=rhs_ty, dst_ty=res_ty))
+            } else {
+              self.emit(Copy(src=rhs_val, dst=tmp_rhs))
+            }
+            
+            // perform operation
+            self.emit(Binary(op~, lhs=tmp_lhs, rhs=tmp_rhs, dst=tmp_lhs))
+            
+            // cast result back to LHS type if needed
+            if res_ty != lhs_ty {
+              self.emit(cast_expr(src=tmp_lhs, dst~, src_ty=res_ty, dst_ty=lhs_ty))
+            } else {
+              self.emit(Copy(src=tmp_lhs, dst~))
+            }
           }
 
           dst
         }
         None => {
-          self.emit(Copy(src=rhs, dst~))
+          self.emit(Copy(src=rhs_val, dst~))
           dst
         }
       }

@@ -432,25 +432,40 @@ pub fn TypeChecker::typed_expr(self: TypeChecker, expr: Expr) -> Expr raise Type
       let rhs = self.typed_expr(rhs)
       let lhs_ty = lhs.ty()
 
-      if lhs_ty == Double {
-        match op.binop() {
-          Some(op) => {
-            if is_illegal_binop_for_double(op) {
-              raise IllegalBinaryOperatorForDouble(op)
+      match op {
+        Assign => {
+          // Simple assignment: convert RHS to LHS type
+          Assignment(op~, lhs~, rhs=cast(rhs, lhs_ty), ty=Some(lhs_ty))
+        }
+        AssignShiftLeft | AssignShiftRight => {
+          // For shift assignments, RHS type doesn't matter for result type,
+          // but RHS cannot be double
+          if rhs.ty() == Double {
+            match op.binop() {
+              Some(binop) => raise IllegalBinaryOperatorForDouble(binop)
+              None => raise TypeCheckerError::Unreachable("shift assignment without binop")
             }
           }
-          None => ()
-        }
-      }
-
-      match op {
-        AssignShiftLeft | AssignShiftRight => {
-          // For shift assignments, rhs is converted to int
           Assignment(op~, lhs~, rhs~, ty=Some(lhs_ty))
         }
         _ => {
-          // For other assignments, convert rhs to lhs type
-          Assignment(op~, lhs~, rhs=cast(rhs, lhs_ty), ty=Some(lhs_ty))
+          // Compound assignment: operation uses common type, but result is LHS type
+          let common_ty = get_common_type(lhs_ty, rhs.ty())
+          
+          if common_ty == Double {
+            match op.binop() {
+              Some(op) => {
+                if is_illegal_binop_for_double(op) {
+                  raise IllegalBinaryOperatorForDouble(op)
+                }
+              }
+              None => ()
+            }
+          }
+          
+          // Don't cast LHS or RHS here - tacky codegen will handle the conversions
+          // Just set the result type to the common type so tacky knows to do conversions
+          Assignment(op~, lhs~, rhs~, ty=Some(common_ty))
         }
       }
     }
