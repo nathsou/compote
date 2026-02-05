@@ -360,14 +360,14 @@ fn Emitter::emit_static_const_def(self: Emitter, defn: AsmStaticConstDef) -> Uni
     MacOS => {
       match defn.alignment {
         16 => {
-          self.emit("literal16")
+          self.emit(".literal16")
           self.emit(self.os.align(16))
           self.emit("\{self.os.label(defn.name)}:")
           self.emit(show_initializer(defn.init))
           self.emit(".quad 0")
         }
         _ => {
-          self.emit("literal8")
+          self.emit(".literal8")
           self.emit(self.os.align(8))
           self.emit("\{self.os.label(defn.name)}:")
           self.emit(show_initializer(defn.init))
