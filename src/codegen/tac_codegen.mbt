@@ -1,4 +1,7 @@
 
+using @parse { type Expr, type Type, type Stmt, type Decl, type FunctionDecl, type Program }
+using @validate { type SymbolTableEntry, type StaticInit }
+
 priv struct TacContext {
   mut next_var_id: Int
   mut next_label_id: Int
@@ -9,11 +12,11 @@ let ctx: TacContext = { next_var_id: 0, next_label_id: 0 }
 pub struct TacBuilder {
   instructions: Array[TacInst]
   switch_stack: Array[TacSwitchStackEntry]
-  symbols: Map[String, @validate.SymbolTableEntry]
+  symbols: Map[String, SymbolTableEntry]
 }
 
 pub suberror TacBuilderError {
-  InvalidAssignmentTarget(@parse.Expr)
+  InvalidAssignmentTarget(Expr)
   BreakWithoutLabel
   ContinueWithoutLabel
   LoopWithoutLabel
@@ -23,7 +26,7 @@ pub suberror TacBuilderError {
   Unreachable(String)
 } derive(Show)
 
-pub fn TacBuilder::new(symbols: Map[String, @validate.SymbolTableEntry]) -> TacBuilder {
+pub fn TacBuilder::new(symbols: Map[String, SymbolTableEntry]) -> TacBuilder {
   {
     instructions: [],
     switch_stack: [],
@@ -38,7 +41,7 @@ struct TacSwitchStackEntry {
   mut current_case_index: Int
 }
 
-fn next_temp_var(self: TacBuilder, ty: @parse.Type) -> String {
+fn TacBuilder::next_temp_var(self: TacBuilder, ty: Type) -> String {
   let var_name = "tmp." + ctx.next_var_id.to_string()
   ctx.next_var_id += 1
   self.symbols[var_name] = Variable(ty=ty, attributes=LocalAttr)
@@ -52,7 +55,7 @@ fn next_label(prefix: String) -> String {
   label_name
 }
 
-fn emit(self: TacBuilder, inst: TacInst) -> Unit {
+fn TacBuilder::emit(self: TacBuilder, inst: TacInst) -> Unit {
   self.instructions.push(inst)
 }
 
@@ -72,24 +75,31 @@ fn get_case_fallthrough_label(switch_label: String, case_index: Int) -> String {
   "case_fallthrough_" + switch_label + "." + case_index.to_string()
 }
 
-fn cast_expr(src~: TacValue, dst~: TacValue, src_ty~: @parse.Type, dst_ty~: @parse.Type) -> TacInst {
+fn cast_expr(src~: TacValue, dst~: TacValue, src_ty~: Type, dst_ty~: Type) -> TacInst {
     // assuming src.ty != dst.ty
+    match (src_ty, dst_ty) {
+      (Int | Long, Double) => IntToDouble(src~, dst~)
+      (UnsignedInt | UnsignedLong, Double) => UIntToDouble(src~, dst~)
+      (Double, Int | Long) => DoubleToInt(src~, dst~)
+      (Double, UnsignedInt | UnsignedLong) => DoubleToUInt(src~, dst~)
+      _ => {
+        let src_ty_size = src_ty.byte_size()
+        let dst_ty_size = dst_ty.byte_size()
 
-    let src_ty_size = src_ty.byte_size()
-    let dst_ty_size = dst_ty.byte_size()
-
-    if dst_ty_size == src_ty_size {
-      return Copy(src~, dst~)
-    } else if dst_ty_size < src_ty_size {
-      return Truncate(src~, dst~)
-    } else if src_ty.is_signed() {
-      return SignExtend(src~, dst~)
-    } else {
-      return ZeroExtend(src~, dst~)
+        if dst_ty_size == src_ty_size {
+          Copy(src~, dst~)
+        } else if dst_ty_size < src_ty_size {
+          Truncate(src~, dst~)
+        } else if src_ty.is_signed() {
+          SignExtend(src~, dst~)
+        } else {
+          ZeroExtend(src~, dst~)
+        }
+      }
     }
 }
 
-fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue raise TacBuilderError {
+fn TacBuilder::convert_expr(self: TacBuilder, expr: Expr) -> TacValue raise TacBuilderError {
   match expr {
     Constant(val~, ty=_) => Constant(val)
     Variable(name~, ty=_) => Variable(name)
@@ -178,40 +188,49 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue raise TacBuilde
       dst
     }
     Assignment(op~, lhs=Variable(name~, ty=Some(lhs_ty)), rhs~, ty=Some(res_ty)) => {
-      let compound_op: Option[@parse.BinaryOp] = match op {
-        AssignAdd => Some(Add)
-        AssignSub => Some(Sub)
-        AssignMul => Some(Mul)
-        AssignDiv => Some(Div)
-        AssignRem => Some(Rem)
-        AssignAnd => Some(BitwiseAnd)
-        AssignOr => Some(BitwiseOr)
-        AssignXor => Some(BitwiseXor)
-        AssignShl => Some(ShiftLeft)
-        AssignShr => Some(ShiftRight)
-        Assign => None
-      }
-
-      let rhs = self.convert_expr(rhs)
+      let rhs_ty = rhs.ty()
+      let rhs_val = self.convert_expr(rhs)
       let dst = TacValue::Variable(name)
 
-      match compound_op {
+      match op.binop() {
         Some(op) => {
-          if lhs_ty == res_ty {
-            self.emit(Binary(op~, lhs=dst, rhs~, dst~))
+          if lhs_ty == res_ty && rhs_ty == res_ty {
+            // No conversions needed
+            self.emit(Binary(op~, lhs=dst, rhs=rhs_val, dst~))
           } else {
-            let tmp = TacValue::Variable(self.next_temp_var(res_ty))
-            // cast the result of the binary operation to the type of the left-hand side
-            self.emit(cast_expr(src=dst, dst=tmp, src_ty=lhs_ty, dst_ty=res_ty))
-            self.emit(Binary(op~, lhs=tmp, rhs~, dst=tmp))
-            // cast the result back to the type of the left-hand side
-            self.emit(cast_expr(src=tmp, dst~, src_ty=res_ty, dst_ty=lhs_ty))
+            // Need conversions
+            let tmp_lhs = TacValue::Variable(self.next_temp_var(res_ty))
+            let tmp_rhs = TacValue::Variable(self.next_temp_var(res_ty))
+            
+            // cast LHS to result type if needed
+            if lhs_ty != res_ty {
+              self.emit(cast_expr(src=dst, dst=tmp_lhs, src_ty=lhs_ty, dst_ty=res_ty))
+            } else {
+              self.emit(Copy(src=dst, dst=tmp_lhs))
+            }
+            
+            // cast RHS to result type if needed
+            if rhs_ty != res_ty {
+              self.emit(cast_expr(src=rhs_val, dst=tmp_rhs, src_ty=rhs_ty, dst_ty=res_ty))
+            } else {
+              self.emit(Copy(src=rhs_val, dst=tmp_rhs))
+            }
+            
+            // perform operation
+            self.emit(Binary(op~, lhs=tmp_lhs, rhs=tmp_rhs, dst=tmp_lhs))
+            
+            // cast result back to LHS type if needed
+            if res_ty != lhs_ty {
+              self.emit(cast_expr(src=tmp_lhs, dst~, src_ty=res_ty, dst_ty=lhs_ty))
+            } else {
+              self.emit(Copy(src=tmp_lhs, dst~))
+            }
           }
 
           dst
         }
         None => {
-          self.emit(Copy(src=rhs, dst~))
+          self.emit(Copy(src=rhs_val, dst~))
           dst
         }
       }
@@ -246,7 +265,7 @@ fn convert_expr(self: TacBuilder, expr: @parse.Expr) -> TacValue raise TacBuilde
   }
 }
 
-fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit raise TacBuilderError {
+fn TacBuilder::convert_stmt(self: TacBuilder, stmt: Stmt) -> Unit raise TacBuilderError {
   match stmt {
     Return(expr) => {
       let src = self.convert_expr(expr)
@@ -345,7 +364,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit raise TacBuilderErr
 
       match init {
         InitEmpty => ()
-        InitDecl(decl) => self.convert_decl(@parse.VarDecl(decl))
+        InitDecl(decl) => self.convert_decl(VarDecl(decl))
         InitExpr(expr) => { let _ = self.convert_expr(expr) }
       }
 
@@ -452,7 +471,7 @@ fn convert_stmt(self: TacBuilder, stmt: @parse.Stmt) -> Unit raise TacBuilderErr
   }
 }
 
-fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit raise TacBuilderError {
+fn TacBuilder::convert_decl(self: TacBuilder, decl: Decl) -> Unit raise TacBuilderError {
   match decl {
     // extern and static variables are handled at the top level
     VarDecl({ storage_class: Some(_), ty: _, name: _, value: _}) => ()
@@ -470,7 +489,7 @@ fn convert_decl(self: TacBuilder, decl: @parse.Decl) -> Unit raise TacBuilderErr
   }
 }
 
-fn convert_function_def(func: @parse.FunctionDecl, symbols: Map[String, @validate.SymbolTableEntry]) -> TacFunctionDef? raise TacBuilderError {
+fn convert_function_def(func: FunctionDecl, symbols: Map[String, SymbolTableEntry]) -> TacFunctionDef? raise TacBuilderError {
   let builder = TacBuilder::new(symbols)
 
   match func.body {
@@ -504,7 +523,7 @@ fn convert_function_def(func: @parse.FunctionDecl, symbols: Map[String, @validat
   }
 }
 
-pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolTableEntry]) -> TacProgram raise TacBuilderError {
+pub fn convert_prog(prog: Program, symbols: Map[String, SymbolTableEntry]) -> TacProgram raise TacBuilderError {
   let top_level: Array[TacTopLevel] = []
 
   for decl in prog.decls {
@@ -521,32 +540,25 @@ pub fn convert_prog(prog: @parse.Program, symbols: Map[String, @validate.SymbolT
 
   // collect static variables
   for name, entry in symbols {
-    match entry {
-      Variable(ty~, attributes~) => {
-        match attributes {
-          StaticAttr(init~, global~) => {
-            match init {
-              Initial(init) => {
-                top_level.push(StaticVar(name~, global~, init~, ty~))
-              }
-              Tentative => {
-                let init: @validate.StaticInit = match ty {
-                  Int => IntInit(0)
-                  Long => LongInit(0)
-                  UnsignedInt => UIntInit(0)
-                  UnsignedLong => ULongInit(0)
-                  _ => raise TacBuilderError::Unreachable("unsupported static variable type")
-                }
-
-                top_level.push(StaticVar(name~, global~, init~, ty~))
-              }
-              NoInitializer => ()
-            }
-          }
-          _ => ()
+    if entry is Variable(ty~, attributes~) && attributes is StaticAttr(init~, global~) {
+      match init {
+        Initial(init) => {
+          top_level.push(StaticVar(name~, global~, init~, ty~))
         }
+        Tentative => {
+          let init: StaticInit = match ty {
+            Int => IntInit(0)
+            Long => LongInit(0)
+            UnsignedInt => UIntInit(0)
+            UnsignedLong => ULongInit(0)
+            Double => DoubleInit(0)
+            _ => raise TacBuilderError::Unreachable("unsupported static variable type")
+          }
+
+          top_level.push(StaticVar(name~, global~, init~, ty~))
+        }
+        NoInitializer => ()
       }
-      _ => ()
     }
   }
 

@@ -4,6 +4,7 @@ pub(all) enum Type {
   Long
   UnsignedInt
   UnsignedLong
+  Double
   FunType(params~: Array[Type], ret~: Type)
 } derive(Eq)
 
@@ -12,6 +13,7 @@ pub(all) enum Constant {
   LongConst(Int64)
   UnsignedIntConst(UInt)
   UnsignedLongConst(UInt64)
+  DoubleConst(Double)
 } derive (Eq, Hash)
 
 pub(all) enum StorageClass {
@@ -103,11 +105,11 @@ pub(all) enum BinaryOp {
 
 pub(all) enum AssignmentOp {
   Assign; AssignAdd; AssignSub; AssignMul; AssignDiv; AssignRem
-  AssignAnd; AssignOr; AssignXor; AssignShl; AssignShr
+  AssignAnd; AssignOr; AssignXor; AssignShiftLeft; AssignShiftRight
 } derive(Eq)
 
 // https://en.wikipedia.org/wiki/Operators_in_C_and_C++#Operator_precedence
-pub fn precedence(self: BinaryOp) -> Int {
+pub fn BinaryOp::precedence(self : BinaryOp) -> Int {
   match self {
     Mul | Div | Rem => 50
     Add | Sub => 45
@@ -124,7 +126,7 @@ pub fn precedence(self: BinaryOp) -> Int {
   }
 }
 
-pub fn to_type(self: FunctionDecl) -> Type {
+pub fn FunctionDecl::to_type(self : FunctionDecl) -> Type {
   FunType(params=self.params.map(fn(param) { param.ty }), ret=self.return_ty)
 }
 
@@ -147,21 +149,38 @@ pub fn Constant::ty(self: Constant) -> Type {
     LongConst(_) => Long
     UnsignedIntConst(_) => UnsignedInt
     UnsignedLongConst(_) => UnsignedLong
+    DoubleConst(_) => Double
   }
 }
 
 pub fn Type::byte_size(self: Type) -> UInt {
   match self {
     Int | UnsignedInt => 4
-    Long | UnsignedLong => 8
+    Long | UnsignedLong | Double => 8
     FunType(_) => 0
   }
 }
 
 pub fn Type::is_signed(self: Type) -> Bool {
   match self {
-    Int | Long => true
+    Int | Long | Double => true
     UnsignedInt | UnsignedLong | FunType(_) => false
+  }
+}
+
+pub fn AssignmentOp::binop(self: AssignmentOp) -> BinaryOp? {
+  match self {
+    AssignAdd => Some(Add)
+    AssignSub => Some(Sub)
+    AssignMul => Some(Mul)
+    AssignDiv => Some(Div)
+    AssignRem => Some(Rem)
+    AssignAnd => Some(BitwiseAnd)
+    AssignOr => Some(BitwiseOr)
+    AssignXor => Some(BitwiseXor)
+    AssignShiftLeft => Some(ShiftLeft)
+    AssignShiftRight => Some(ShiftRight)
+    Assign => None
   }
 }
 
@@ -183,6 +202,8 @@ pub fn Constant::fit_val_to_type(self: Constant, ty: Type) -> Constant raise {
     (UnsignedLongConst(n), UnsignedLong) => UnsignedLongConst(n)
     (UnsignedLongConst(n), Long) => LongConst(n.reinterpret_as_int64())
     (UnsignedLongConst(n), Int) => IntConst(n.to_int())
-    (_, FunType(_)) => raise Failure("Invalid valant type conversion")
+    (_, FunType(_)) => fail("Invalid valant type conversion")
+    (_, Double) => fail("fit_val_to_type: unhandled")
+    (DoubleConst(_), _) => fail("fit_val_to_type: unhandled")
   }
 }

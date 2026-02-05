@@ -44,7 +44,7 @@ fn ReplacePseudoRegsPass::rewrite_operand(self: ReplacePseudoRegsPass, operand: 
   }
 }
 
-fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
+fn ReplacePseudoRegsPass::rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
   match inst {
     Mov(src~, dst~, ty~) => {
       let src = self.rewrite_operand(src)
@@ -84,6 +84,16 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
       Div(src~, ty~)
     }
     Cdq(ty~) => Cdq(ty~)
+    Cvtsi2sd(src_ty~, src~, dst~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Cvtsi2sd(src_ty~, src~, dst~)
+    }
+    Cvttsd2si(dst_ty~, src~, dst~) => {
+      let src = self.rewrite_operand(src)
+      let dst = self.rewrite_operand(dst)
+      Cvttsd2si(dst_ty~, src~, dst~)
+    }
     Jmp(target) => Jmp(target)
     JmpCond(cond~, target~) => JmpCond(cond~, target~)
     SetCond(cond~, dst~) => {
@@ -100,7 +110,7 @@ fn rewrite_inst(self: ReplacePseudoRegsPass, inst: AsmInst) -> AsmInst raise {
   }
 }
 
-pub fn run(self: ReplacePseudoRegsPass, insts: Array[AsmInst]) -> Array[AsmInst] raise {
+pub fn ReplacePseudoRegsPass::run(self: ReplacePseudoRegsPass, insts: Array[AsmInst]) -> Array[AsmInst] raise {
   let new_insts = []
 
   for inst in insts {

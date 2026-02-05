@@ -24,5 +24,5 @@ Following [Writing a C Compiler by Nora Sandler](https://nostarch.com/writing-c-
 
 ```bash
 cd writing-a-c-compiler-tests
-./test_compiler ../target/release/compote --chapter 12 --bitwise --compound
+./test_compiler ../target/release/compote --chapter 13 --bitwise --compound
 ```

@@ -2,7 +2,8 @@
 pub struct Emitter {
   os: OperatingSystem
   lines: Array[String]
-  symbols: Map[String, @validate.SymbolTableEntry]
+  symbols: Map[String, SymbolTableEntry]
+  constants: Set[String]
   mut indentation: Int
 }
 
@@ -11,25 +12,25 @@ pub suberror EmitterError {
   Unreachable(String)
 } derive(Show)
 
-pub fn Emitter::new(os: OperatingSystem, symbols: Map[String, @validate.SymbolTableEntry]) -> Emitter {
-  { os, lines: [], indentation: 0, symbols }
+pub fn Emitter::new(os: OperatingSystem, symbols: Map[String, SymbolTableEntry]) -> Emitter {
+  { os, lines: [], indentation: 0, symbols, constants: @set.new() }
 }
 
-fn symbol(self: OperatingSystem, name: String) -> String {
+fn OperatingSystem::symbol(self: OperatingSystem, name: String) -> String {
   match self {
     Linux => name
     MacOS => "_" + name
   }
 }
 
-fn align(self: OperatingSystem, n: Int64) -> String {
+fn OperatingSystem::align(self: OperatingSystem, n: Int64) -> String {
   match self {
     Linux => ".balign \{n}" // could also use .align directive
     MacOS => ".balign \{n}"
   }
 }
 
-fn label(self: OperatingSystem, name: String) -> String {
+fn OperatingSystem::label(self: OperatingSystem, name: String) -> String {
   match self {
     Linux => ".L" + name
     MacOS => "L" + name
@@ -61,8 +62,8 @@ fn Emitter::emit(self: Emitter, line: String) -> Unit {
   self.lines.push(repeat_string("  ", self.indentation) + line)
 }
 
-fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String raise EmitterError {
-  match self {
+fn Emitter::asm_reg_size(self: Emitter, op: AsmOperand, size: RegSize) -> String raise EmitterError {
+  match op {
     Imm(n) => "$\{n}"
     Reg(reg) => match reg {
       AX => match size {
@@ -115,27 +116,52 @@ fn asm_reg_size(self: AsmOperand, size: RegSize, os: OperatingSystem) -> String 
         Long => "%esp"
         Quad => "%rsp"
       }
+      XMM0 => "%xmm0"
+      XMM1 => "%xmm1"
+      XMM2 => "%xmm2"
+      XMM3 => "%xmm3"
+      XMM4 => "%xmm4"
+      XMM5 => "%xmm5"
+      XMM6 => "%xmm6"
+      XMM7 => "%xmm7"
+      XMM8 => "%xmm8"
+      XMM9 => "%xmm9"
+      XMM10 => "%xmm10"
+      XMM11 => "%xmm11"
+      XMM12 => "%xmm12"
+      XMM13 => "%xmm13"
+      XMM14 => "%xmm14"
+      XMM15 => "%xmm15"
     }
-    RegSize(reg, size) => Reg(reg).asm_reg_size(size, os)
+    RegSize(reg, size) => self.asm_reg_size(Reg(reg), size)
     Stack(offset) => "\{offset}(%rbp)"
     Pseudo(name) => raise UnexpectedPseudoReg(name)
-    Data(name) => os.symbol(name) + "(%rip)"
+    Data(name) => {
+      let target = if self.constants.contains(name) {
+        self.os.label(name)
+      } else {
+        self.os.symbol(name)
+      }
+
+      "\{target}(%rip)"
+    }
   }
 }
 
-fn fmt(self: AsmOperand, ty: AsmType, os: OperatingSystem) -> String raise EmitterError {
+fn Emitter::show_op(self: Emitter, op: AsmOperand, ty: AsmType) -> String raise EmitterError {
   let size = match ty {
     LongWord => Long
-    QuadWord => Quad
+    QuadWord | Double => Quad
   }
 
-  self.asm_reg_size(size, os)
+  self.asm_reg_size(op, size)
 }
 
 fn AsmUnaryOp::mnemonic(self: AsmUnaryOp) -> String {
   match self {
     Neg => "neg"
     BitwiseNot => "not"
+    Shr => "shr"
   }
 }
 
@@ -151,10 +177,11 @@ fn AsmBinaryOp::mnemonic(self: AsmBinaryOp) -> String {
     And => "and"
     Or => "or"
     Xor => "xor"
+    DivDouble => "div"
   }
 }
 
-fn suffix(self: CondCode) -> String {
+fn CondCode::suffix(self: CondCode) -> String {
   match self {
     Eq => "e"
     Ne => "ne"
@@ -169,55 +196,71 @@ fn suffix(self: CondCode) -> String {
   }
 }
 
-fn emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
+fn Emitter::emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
   match inst {
     Mov(src~, dst~, ty~) => {
-      self.emit("mov\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
+      self.emit("mov\{ty.suffix()} \{self.show_op(src, ty)}, \{self.show_op(dst, ty)}")
     }
     Movsx(src~, dst~) => {
-      self.emit("movslq \{src.fmt(LongWord, self.os)}, \{dst.fmt(QuadWord, self.os)}")
+      self.emit("movslq \{self.show_op(src, LongWord)}, \{self.show_op(dst, QuadWord)}")
     }
     MovZeroExtend(_) => {
       raise EmitterError::Unreachable("MovZeroExtend should have been removed by the ReplacePseudoRegs pass")
     }
     Unary(op~, dst~, ty~) => {
-      self.emit("\{op.mnemonic()}\{ty.suffix()} \{dst.fmt(ty, self.os)}")
+      self.emit("\{op.mnemonic()}\{ty.suffix()} \{self.show_op(dst, ty)}")
     }
     Binary(op=Shl | Sal as op, src~, dst~, ty~) => {
-      self.emit("\{op.mnemonic()}\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
+      self.emit("\{op.mnemonic()}\{ty.suffix()} \{self.show_op(src, ty)}, \{self.show_op(dst, ty)}")
+    }
+    Binary(op=Xor, src~, dst~, ty=Double) => {
+      self.emit("xorpd \{self.show_op(src, Double)}, \{self.show_op(dst, Double)}")
+    }
+    Binary(op=Mul, src~, dst~, ty=Double) => {
+      self.emit("mulsd \{self.show_op(src, Double)}, \{self.show_op(dst, Double)}")
     }
     Binary(op~, src~, dst~, ty~) => {
-      self.emit("\{op.mnemonic()}\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
+      self.emit("\{op.mnemonic()}\{ty.suffix()} \{self.show_op(src, ty)}, \{self.show_op(dst, ty)}")
+    }
+    Cmp(src~, dst~, ty=Double) => {
+      self.emit("comisd \{self.show_op(src, Double)}, \{self.show_op(dst, Double)}")
     }
     Cmp(src~, dst~, ty~) => {
-      self.emit("cmp\{ty.suffix()} \{src.fmt(ty, self.os)}, \{dst.fmt(ty, self.os)}")
+      self.emit("cmp\{ty.suffix()} \{self.show_op(src, ty)}, \{self.show_op(dst, ty)}")
     }
     IDiv(src~, ty~) => {
-      self.emit("idiv\{ty.suffix()} \{src.fmt(ty, self.os)}")
+      self.emit("idiv\{ty.suffix()} \{self.show_op(src, ty)}")
     }
     Div(src~, ty~) => {
-      self.emit("div\{ty.suffix()} \{src.fmt(ty, self.os)}")
+      self.emit("div\{ty.suffix()} \{self.show_op(src, ty)}")
     }
     Cdq(ty~) => {
       match ty {
         LongWord => self.emit("cdq")
         QuadWord => self.emit("cqo")
+        Double => raise EmitterError::Unreachable("Cdq should not be used with Double type")
       }
     }
-    Jmp(target) => {
+    Cvtsi2sd(src_ty~, src~, dst~) => {
+      self.emit("cvtsi2sd\{src_ty.suffix()} \{self.show_op(src, src_ty)}, \{self.show_op(dst, Double)}")
+    }
+    Cvttsd2si(dst_ty~, src~, dst~) => {
+      self.emit("cvttsd2si\{dst_ty.suffix()} \{self.show_op(src, Double)}, \{self.show_op(dst, dst_ty)}")
+    }
+    Jmp(target) => { 
       self.emit("jmp \{self.os.label(target)}")
     }
     JmpCond(cond~, target~) => {
       self.emit("j\{cond.suffix()} \{self.os.label(target)}")
     }
     SetCond(cond~, dst~) => {
-      self.emit("set\{cond.suffix()} \{dst.asm_reg_size(Byte, self.os)}")
+      self.emit("set\{cond.suffix()} \{self.asm_reg_size(dst, Byte)}")
     }
     Label(name) => {
       self.emit(self.os.label(name) + ":")
     }
     Push(operand) => {
-      self.emit("pushq \{operand.fmt(QuadWord, self.os)}")
+      self.emit("pushq \{self.show_op(operand, QuadWord)}")
     }
     Call(label) => {
       let suffix = match self.os {
@@ -242,7 +285,7 @@ fn emit_inst(self: Emitter, inst: AsmInst) -> Unit raise EmitterError {
   }
 }
 
-fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit raise EmitterError {
+fn Emitter::emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit raise EmitterError {
   let name = self.os.symbol(f.name)
 
   if f.global {
@@ -264,16 +307,17 @@ fn emit_function_def(self: Emitter, f: AsmFunctionDef) -> Unit raise EmitterErro
   self.indentation -= 1
 }
 
-fn show_initializer(init: @validate.StaticInit) -> String {
+fn show_initializer(init: StaticInit) -> String {
   match init {
     IntInit(n) => ".long \{n}"
     LongInit(n) => ".quad \{n}"
     UIntInit(n) => ".long \{n}"
     ULongInit(n) => ".quad \{n}"
+    DoubleInit(x) => ".quad \{x.reinterpret_as_uint64()}"
   }
 }
 
-fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
+fn Emitter::emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
   let { name, global, alignment, init } = defn
   let name = self.os.symbol(name)
 
@@ -282,19 +326,19 @@ fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
   }
 
   match init {
-    IntInit(0) | LongInit(0) | UIntInit(0) | ULongInit(0) => {
+    IntInit(0) | LongInit(0) | UIntInit(0) | ULongInit(0) | DoubleInit(0.0) => {
       self.emit(".bss")
       self.emit(self.os.align(alignment))
       self.emit("\{name}:")
       
       let size = match init {
         IntInit(_) | UIntInit(_) => 4
-        LongInit(_) | ULongInit(_) => 8
+        LongInit(_) | ULongInit(_) | DoubleInit(_) => 8
       }
 
       self.emit(".zero \{size}")
     }
-    IntInit(_) | LongInit(_) | UIntInit(_) | ULongInit(_) => {
+    IntInit(_) | LongInit(_) | UIntInit(_) | ULongInit(_) | DoubleInit(_) => {
       self.emit(".data")
       self.emit(self.os.align(alignment))
       self.emit("\{name}:")
@@ -303,9 +347,43 @@ fn emit_static_variable_def(self: Emitter, defn: AsmStaticVarDef) -> Unit {
   }
 }
 
-pub fn emit_program(self: Emitter, program: AsmProgram) -> Unit raise EmitterError {
+fn Emitter::emit_static_const_def(self: Emitter, defn: AsmStaticConstDef) -> Unit {
+  self.constants.add(defn.name)
+
+  match self.os {
+    Linux => {
+      self.emit(".section .rodata")
+      self.emit(self.os.align(defn.alignment))
+      self.emit("\{self.os.label(defn.name)}:")
+      self.emit(show_initializer(defn.init))
+    }
+    MacOS => {
+      match defn.alignment {
+        16 => {
+          self.emit(".literal16")
+          self.emit(self.os.align(16))
+          self.emit("\{self.os.label(defn.name)}:")
+          self.emit(show_initializer(defn.init))
+          self.emit(".quad 0")
+        }
+        _ => {
+          self.emit(".literal8")
+          self.emit(self.os.align(8))
+          self.emit("\{self.os.label(defn.name)}:")
+          self.emit(show_initializer(defn.init))
+        }
+      }
+    }
+  }
+}
+
+pub fn Emitter::emit_program(self: Emitter, program: AsmProgram) -> Unit raise EmitterError {
   for v in program.static_vars {
     self.emit_static_variable_def(v)
+  }
+
+  for c in program.static_consts {
+    self.emit_static_const_def(c)
   }
 
   for f in program.functions {

@@ -7,6 +7,7 @@ pub struct Lexer {
 pub suberror LexerError {
   UnexepectedChar(Char)
   InvalidIntegerLiteral(String)
+  InvalidDoubleLiteral(String)
 } derive(Show)
 
 fn is_whitespace(c: Char) -> Bool {
@@ -29,6 +30,10 @@ fn is_alpha(c: Char) -> Bool {
 
 fn is_alphanumeric(c: Char) -> Bool {
   is_alpha(c) || is_digit(c)
+}
+
+fn is_identifier_start(c: Char) -> Bool {
+  is_alpha(c) || c == '_'
 }
 
 pub fn Lexer::new(input: String) -> Lexer {
@@ -72,11 +77,12 @@ fn Lexer::skip_whitespaces(self: Lexer) -> Unit {
   }
 }
 
-priv enum ParsedInt {
+priv enum ParsedNum {
   Int(Int)
   Long(Int64)
   UnsignedInt(UInt)
   UnsignedLong(UInt64)
+  Double(Double)
 }
 
 let zero_ascii: Int = '0'.to_int()
@@ -101,7 +107,7 @@ priv enum IntKind {
   IntK; LongK; UIntK; ULongK
 }
 
-fn reinterpret_i64(n: Int64, kind: IntKind) -> ParsedInt {
+fn reinterpret_i64(n: Int64, kind: IntKind) -> ParsedNum {
   match kind {
     IntK => Int(n.to_int())
     LongK => Long(n)
@@ -110,61 +116,101 @@ fn reinterpret_i64(n: Int64, kind: IntKind) -> ParsedInt {
   }
 }
 
-let max_int: Int64 = @int.max_value.to_int64()
-let min_int: Int64 = @int.min_value.to_int64()
+let max_int : Int64 = @int.max_value.to_int64()
 
-fn parse_integer(self: Lexer) -> ParsedInt raise LexerError {
+let min_int : Int64 = @int.min_value.to_int64()
+
+fn Lexer::parse_num(self : Lexer) -> ParsedNum raise LexerError {
   let mut digits = ""
-
-  for i in self.index..<self.input.length() {
+  let mut is_integral = true
+  let mut i = self.index
+  while i < self.input.length() {
     let char = self.input[i].to_char().unwrap()
-
+    i += 1
     if is_digit(char) {
       digits += char.to_string()
       self.advance()
-    } else {
-      break
-    }
-  }
-
-  let mut suffix = ""
-
-  while self.index < self.input.length() {
-    let char = self.peek()
-
-    if is_alphanumeric(char) {
-      suffix += char.to_string().to_lower()
+    } else if char == '.' {
+      // two dots are not allowed
+      if not(is_integral) {
+        raise InvalidDoubleLiteral(digits + ".")
+      }
+      is_integral = false
+      digits += "."
       self.advance()
+    } else if char == 'e' || char == 'E' {
+      is_integral = false
+      digits += char.to_string()
+      self.advance()
+      if self.matches('+') || self.matches('-') {
+        digits += self.peek().to_string()
+        self.advance()
+        i += 1 // skip + or -
+      }
     } else {
       break
     }
   }
-
-  let value = parse_i64(digits)
-
-  let kind = match suffix {
-    "l" => LongK
-    "ul" | "lu" => ULongK
-    "u" => {
-      // if the value is out of range for an int, return a long
-      if value > max_int || value < min_int {
-        ULongK
+  let num = if is_integral {
+    let mut suffix = ""
+    while self.index < self.input.length() {
+      let char = self.peek()
+      if is_alphanumeric(char) {
+        suffix += char.to_string().to_lower()
+        self.advance()
       } else {
-        UIntK
+        break
       }
     }
-    "" => {
-      // if the value is out of range for an int, return a long
-      if value > max_int || value < min_int {
-        LongK
-      } else {
-        IntK
+    let value = parse_i64(digits)
+    let kind : IntKind = match suffix {
+      "l" => LongK
+      "ul" | "lu" => ULongK
+      "u" =>
+        // if the value is out of range for an int, return a long
+        if value > max_int || value < min_int {
+          ULongK
+        } else {
+          UIntK
+        }
+      "" =>
+        // if the value is out of range for an int, return a long
+        if value > max_int || value < min_int {
+          LongK
+        } else {
+          IntK
+        }
+      _ => raise InvalidIntegerLiteral(digits + suffix)
+    }
+    reinterpret_i64(value, kind)
+  } else {
+    try @strconv.parse_double(digits) catch {
+      err =>
+        match err {
+          StrConvError("value out of range") =>
+            // round to infinity
+            if digits.contains("-") {
+              Double(@double.neg_infinity)
+            } else {
+              Double(@double.infinity)
+            }
+          _ => raise InvalidDoubleLiteral(digits)
+        }
+    } noraise {
+      n => {
+        let next_char = self.peek()
+        if is_identifier_start(next_char) {
+          raise InvalidDoubleLiteral(digits + next_char.to_string())
+        }
+        Double(n)
       }
     }
-    _ => raise InvalidIntegerLiteral(digits + suffix)
   }
-
-  reinterpret_i64(value, kind)
+  // a constant cannot be followed by a dot
+  if self.peek() == '.' {
+    raise InvalidDoubleLiteral(digits + ".")
+  }
+  num
 }
 
 fn Lexer::parse_identifier(self: Lexer) -> String {
@@ -184,6 +230,93 @@ fn Lexer::parse_identifier(self: Lexer) -> String {
   identifier
 }
 
+fn categorize_identifier(identifier: String) -> Token {
+  match identifier[0] {
+    'b' => {
+      if identifier == "break" {
+        return Break
+      }
+    }
+    'c' => {
+      if identifier == "case" {
+        return Case
+      } else if identifier == "continue" {
+        return Continue
+      }
+    }
+    'd' => {
+      if identifier == "do" {
+        return Do
+      } else if identifier == "double" {
+        return Double
+      } else if identifier == "default" {
+        return Default
+      }
+    }
+    'e' => {
+      if identifier == "else" {
+        return Else
+      } else if identifier == "extern" {
+        return Extern
+      }
+    }
+    'f' => {
+      if identifier == "for" {
+        return For
+      }
+    }
+    'g' => {
+      if identifier == "goto" {
+        return Goto
+      }
+    }
+    'i' => {
+      if identifier == "if" {
+        return If
+      } else if identifier == "int" {
+        return Int
+      }
+    }
+    'l' => {
+      if identifier == "long" {
+        return Long
+      }
+    }
+    'r' => {
+      if identifier == "return" {
+        return Return
+      }
+    }
+    's' => {
+      if identifier == "signed" {
+        return Signed
+      } else if identifier == "static" {
+        return Static
+      } else if identifier == "switch" {
+        return Switch
+      }
+    }
+    'u' => {
+      if identifier == "unsigned" {
+        return Unsigned
+      }
+    }
+    'v' => {
+      if identifier == "void" {
+        return Void
+      }
+    }
+    'w' => {
+      if identifier == "while" {
+        return While
+      }
+    }
+    _ => ()
+  }
+
+  Identifier(identifier)
+}
+
 fn Lexer::advance(self: Lexer) -> Unit {
   self.index += 1
 }
@@ -194,7 +327,7 @@ priv enum LexerResult {
   EOF
 }
 
-fn next(self: Lexer) -> LexerResult {
+fn Lexer::next(self: Lexer) -> LexerResult {
   self.skip_whitespaces()
 
   if self.index >= self.input.length() {
@@ -372,41 +505,20 @@ fn next(self: Lexer) -> LexerResult {
       }
     }
     _ => {
-      if is_digit(char) {
-        match (try? self.parse_integer()) {
-          Err(error) => return Err(error)
-          Ok(value) => match value {
-            Int(n) => Ok(IntLiteral(n))
-            Long(n) => Ok(LongLiteral(n))
-            UnsignedInt(n) => Ok(UIntLiteral(n))
-            UnsignedLong(n) => Ok(ULongLiteral(n))
-          }
+      if is_digit(char) || char == '.' {
+        let value = try self.parse_num() catch {
+          error => return Err(error)
         }
-      } else if is_alpha(char) || char == '_' {
+        match value {
+          Int(n) => Ok(IntLiteral(n))
+          Long(n) => Ok(LongLiteral(n))
+          UnsignedInt(n) => Ok(UIntLiteral(n))
+          UnsignedLong(n) => Ok(ULongLiteral(n))
+          Double(n) => Ok(DoubleLiteral(n))
+        }
+      } else if is_identifier_start(char) {
         let identifier = self.parse_identifier()
-
-        Ok(match identifier {
-          "int" => Int
-          "long" => Long
-          "signed" => Signed
-          "unsigned" => Unsigned
-          "return" => Return
-          "void" => Void
-          "if" => If
-          "else" => Else
-          "goto" => Goto
-          "do" => Do
-          "while" => While
-          "for" => For
-          "break" => Break
-          "continue" => Continue
-          "switch" => Switch
-          "case" => Case
-          "default" => Default
-          "static" => Static
-          "extern" => Extern
-          _ => Identifier(identifier)
-        })
+        Ok(categorize_identifier(identifier))
       } else {
         Err(UnexepectedChar(char))
       }

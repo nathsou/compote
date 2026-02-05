@@ -16,6 +16,7 @@ enum DriverStage {
     Validate,
     Tacky,
     Codegen,
+    Assemble,
 }
 
 enum OperatingSystem {
@@ -58,15 +59,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(Arg::with_name("S")
              .short("S")
              .help("Compile only; do not assemble or link"))
-        // Modified to accept multiple source files
         .arg(Arg::with_name("source")
              .required(true)
              .multiple(true)
              .help("Input source files"))
+        .arg(Arg::with_name("library")
+             .short("l")
+             .takes_value(true)
+             .number_of_values(1)
+             .multiple(true)
+             .help("Link with the specified library"))
         .get_matches();
 
     // Collect the source files
     let source_files: Vec<&str> = matches.values_of("source").unwrap().collect();
+
+    // Collect libraries
+    let libraries: Vec<&str> = matches.values_of("library").unwrap_or_default().collect();
 
     // Determine the compilation stage
     let stage = if matches.is_present("lex") {
@@ -77,8 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         DriverStage::Validate
     } else if matches.is_present("tacky") {
         DriverStage::Tacky
-    } else {
+    } else if matches.is_present("codegen") {
         DriverStage::Codegen
+    } else {
+        DriverStage::Assemble
     };
 
     // Determine the operating system
@@ -94,14 +105,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Iterate over each source file
     for source_file in source_files {
         // Process each source file individually
-        process_source_file(source_file, &matches, &stage, &os)?;
+        process_source_file(source_file, &matches, &stage, &os, &libraries)?;
     }
 
     Ok(())
 }
 
 // Function to process a single source file
-fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &DriverStage, os: &OperatingSystem) -> Result<(), Box<dyn std::error::Error>> {
+fn process_source_file(
+    source_file: &str,
+    matches: &clap::ArgMatches,
+    stage: &DriverStage,
+    os: &OperatingSystem,
+    libraries: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
     // Read and preprocess the source file
     let preprocessed = preprocess(source_file)?;
 
@@ -117,7 +134,8 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
     let mut exe_path = env::current_exe()?;
     exe_path.pop();
     exe_path.pop();
-    let wasm_file_path = exe_path.join("wasm/release/build/driver/driver.wasm");
+    exe_path.pop();
+    let wasm_file_path = exe_path.join("_build/wasm/release/build/driver/driver.wasm");
 
     if !wasm_file_path.exists() {
         eprintln!("Error: WebAssembly file {} not found", wasm_file_path.display());
@@ -189,6 +207,7 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
         DriverStage::Validate => 2,
         DriverStage::Tacky => 3,
         DriverStage::Codegen => 4,
+        DriverStage::Assemble => 5,
     };
 
     let os_param = match os {
@@ -242,13 +261,13 @@ fn process_source_file(source_file: &str, matches: &clap::ArgMatches, stage: &Dr
                         // Clean up the .s file
                         fs::remove_file(&asm_file_path)?;
 
-                    } else if matches.is_present("codegen") || *stage != DriverStage::Codegen {
-                        // Print assembly code
+                    } else if *stage != DriverStage::Assemble {
+                        // Print assembly code for intermediate stages
                         println!("{asm_code}");
                     } else {
                         // Assemble the code into an executable
                         let output_file_path = Path::new(source_file).with_extension("");
-                        assemble(&asm_code, output_file_path.to_str().unwrap())?;
+                        assemble(&asm_code, output_file_path.to_str().unwrap(), libraries)?;
                     }
                 },
                 Err(err_msg) => {
@@ -280,7 +299,7 @@ fn preprocess(source_file: &str) -> io::Result<String> {
 }
 
 // Function to assemble the assembly code using clang
-fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
+fn assemble(assembly_code: &str, output_file_path: &str, libraries: &[&str]) -> io::Result<()> {
     // Create a temporary file with the assembly code
     use std::fs::File;
     use std::io::Write;
@@ -296,11 +315,18 @@ fn assemble(assembly_code: &str, output_file_path: &str) -> io::Result<()> {
     }
 
     // Invoke clang to assemble and link
-    let output = Command::new(CC)
-        .arg(&asm_file_path)
+    let mut cmd = Command::new(CC);
+
+    cmd.arg(&asm_file_path)
         .arg("-o")
-        .arg(output_file_path)
-        .output()?;
+        .arg(output_file_path);
+    
+    // Add library flags
+    for lib in libraries {
+        cmd.arg(format!("-l{}", lib));
+    }
+    
+    let output = cmd.output()?;
 
     // Clean up temporary file
     fs::remove_file(&asm_file_path)?;

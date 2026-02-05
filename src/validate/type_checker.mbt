@@ -1,39 +1,91 @@
+using @parse { 
+  type UnaryOp, type BinaryOp, type Type, type Constant, type Expr, type Program,
+  type VariableDecl, type FunctionDecl, type Decl, type BlockItem, type Stmt,
+  type ForInit, type FunctionParam
+}
 
 pub(all) enum StaticInit {
-  IntInit(Int); LongInit(Int64); UIntInit(UInt); ULongInit(UInt64)
-} derive(Show, Eq)
+  IntInit(Int); LongInit(Int64)
+  UIntInit(UInt); ULongInit(UInt64)
+  DoubleInit(Double)
+} derive(Show)
+
+pub impl Eq for StaticInit with equal(self: StaticInit, other: StaticInit) -> Bool {
+  match (self, other) {
+    (IntInit(a), IntInit(b)) => a == b
+    (LongInit(a), LongInit(b)) => a == b
+    (UIntInit(a), UIntInit(b)) => a == b
+    (ULongInit(a), ULongInit(b)) => a == b
+    // Handles 0.0 and -0.0 being bitwise different but numerically equal
+    (DoubleInit(a), DoubleInit(b)) => a.reinterpret_as_uint64() == b.reinterpret_as_uint64()
+    _ => false
+  }
+}
 
 pub enum InitialValue {
   Tentative; Initial(StaticInit); NoInitializer
 }
 
-fn convert_to(val: @parse.Constant, ty: @parse.Type) -> StaticInit raise TypeCheckerError {
+fn convert_to(val: Constant, ty: Type) -> StaticInit raise TypeCheckerError {
   match ty {
     Int => match val {
       IntConst(n) => IntInit(n)
       LongConst(n) => IntInit(n.to_int())
-      UnsignedIntConst(n) => UIntInit(n)
-      UnsignedLongConst(n) => UIntInit(n.to_uint())
+      UnsignedIntConst(n) => IntInit(n.reinterpret_as_int())
+      UnsignedLongConst(n) => IntInit(n.to_int())
+      DoubleConst(x) => IntInit(x.to_int())
     }
     Long => match val {
       IntConst(n) => LongInit(n.to_int64())
       LongConst(n) => LongInit(n)
       UnsignedIntConst(n) => LongInit(n.to_int64())
       UnsignedLongConst(n) => LongInit(n.reinterpret_as_int64())
+      DoubleConst(x) => LongInit(x.to_int64())
     }
     UnsignedInt => match val {
       IntConst(n) => UIntInit(n.reinterpret_as_uint())
       LongConst(n) => UIntInit(n.reinterpret_as_uint64().to_uint())
       UnsignedIntConst(n) => UIntInit(n)
       UnsignedLongConst(n) => UIntInit(n.to_uint())
+      DoubleConst(x) => {
+        // Convert double to unsigned int by first converting to int64 (which truncates),
+        // then reinterpreting those bits as uint
+        let as_i64 = x.to_int64()
+        UIntInit(as_i64.reinterpret_as_uint64().to_uint())
+      }
     }
     UnsignedLong => match val {
       IntConst(n) => ULongInit(n.to_uint64())
       LongConst(n) => ULongInit(n.reinterpret_as_uint64())
       UnsignedIntConst(n) => ULongInit(n.to_uint64())
       UnsignedLongConst(n) => ULongInit(n)
+      DoubleConst(x) => {
+        // Handle conversion from double to unsigned long
+        // For values >= 2^63, we need special handling because to_int64() saturates
+        let two_pow_63 = 9223372036854775808.0  // 2^63
+        if x >= two_pow_63 {
+          // Subtract 2^63, convert to signed int64, then add back 2^63 as unsigned
+          let adjusted = x - two_pow_63
+          let as_i64 = adjusted.to_int64()
+          let as_u64 = as_i64.reinterpret_as_uint64()
+          // Add back 2^63 (which is 0x8000000000000000 in unsigned)
+          let result = as_u64 + 9223372036854775808UL
+          ULongInit(result)
+        } else {
+          // Normal case: value fits in signed int64 range
+          let as_i64 = x.to_int64()
+          ULongInit(as_i64.reinterpret_as_uint64())
+        }
+      }
     }
-    _ => raise TypeCheckerError::Unreachable("non-integer static variable initializer")
+    Double => match val {
+      IntConst(n) => DoubleInit(n.to_double())
+      LongConst(n) => DoubleInit(n.to_double())
+      UnsignedIntConst(n) => DoubleInit(n.to_int64().to_double())
+      UnsignedLongConst(n) => DoubleInit(n.to_double())
+      DoubleConst(x) => DoubleInit(x)
+    }
+    FunType(_) => raise TypeCheckerError::Unreachable("non-numerical static variable initializer")
   }
 }
 
@@ -44,11 +96,11 @@ pub(all) enum IdentifierAttributes {
 }
 
 pub(all) enum SymbolTableEntry {
-  Variable(ty~: @parse.Type, attributes~: IdentifierAttributes)
-  Function(ty~: @parse.Type, attributes~: IdentifierAttributes)
+  Variable(ty~: Type, attributes~: IdentifierAttributes)
+  Function(ty~: Type, attributes~: IdentifierAttributes)
 }
 
-pub fn ty(self: SymbolTableEntry) -> @parse.Type {
+pub fn SymbolTableEntry::ty(self: SymbolTableEntry) -> Type {
   match self {
     Variable(ty~, attributes=_) | Function(ty~, attributes=_) => ty
   }
@@ -56,7 +108,7 @@ pub fn ty(self: SymbolTableEntry) -> @parse.Type {
 
 pub struct FunctionStackEntry {
   name: String
-  return_ty: @parse.Type
+  return_ty: Type
 }
 
 pub struct TypeChecker {
@@ -65,20 +117,22 @@ pub struct TypeChecker {
 }
 
 pub suberror TypeCheckerError {
-  IncompatibleFunctionDeclarations(name~: String, old_decl~: @parse.Type, new_decl~: @parse.Type)
+  IncompatibleFunctionDeclarations(name~: String, old_decl~: Type, new_decl~: Type)
   FunctionDefinedMoreThanOnce(String)
   FunctionNameUsedAsVariable(String)
   IncorrectArgumentCount(name~: String, expected~: Int, actual~: Int)
   VariableUsedAsFunctionName(String)
   UndefinedSymbol(String)
   StaticFunctionDeclFollowsNonStatic(String)
-  FileScopeVarNonConstantInitializer(variable~: String, init~: @parse.Expr)
+  FileScopeVarNonConstantInitializer(variable~: String, init~: Expr)
   VariableRedeclaredWithDifferentType(String)
   ConflictingVariableLinkage(String)
   ConflictingGlobalVariableDefinition(String)
   InitializerOnLocalExternVarDecl(String)
-  NonConstantInitializerOnLocalStaticVar(variable~: String, init~: @parse.Expr)
+  NonConstantInitializerOnLocalStaticVar(variable~: String, init~: Expr)
   StorageClassNotPermittedInForLoopInitializer
+  IllegalUnaryOperatorForDouble(UnaryOp)
+  IllegalBinaryOperatorForDouble(BinaryOp)
   Unreachable(String)
 } derive(Show)
 
@@ -86,7 +140,7 @@ pub fn TypeChecker::new() -> TypeChecker {
   { symbols: {}, function_stack: [] }
 }
 
-fn TypeChecker::typed_file_scope_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> @parse.VariableDecl raise TypeCheckerError {
+fn TypeChecker::typed_file_scope_variable_decl(self: TypeChecker, decl: VariableDecl) -> VariableDecl raise TypeCheckerError {
   let mut initial_value = match decl.value {
     Some(Constant(val~, ty=_)) => Initial(convert_to(val, decl.ty))
     None => match decl.storage_class {
@@ -134,10 +188,10 @@ fn TypeChecker::typed_file_scope_variable_decl(self: TypeChecker, decl: @parse.V
   decl
 }
 
-fn typed_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> @parse.VariableDecl raise TypeCheckerError {
+fn TypeChecker::typed_local_variable_decl(self: TypeChecker, decl: VariableDecl) -> VariableDecl raise TypeCheckerError {
   match decl.storage_class {
     Some(Extern) => {
-      if not(decl.value.is_empty()) {
+      if not(decl.value is None) {
         raise InitializerOnLocalExternVarDecl(decl.name)
       }
 
@@ -182,16 +236,16 @@ fn typed_local_variable_decl(self: TypeChecker, decl: @parse.VariableDecl) -> @p
   }
 }
 
-fn typed_variable_declaration(self: TypeChecker, decl: @parse.VariableDecl, scope~: DeclarationScope) -> @parse.VariableDecl raise TypeCheckerError {
+fn TypeChecker::typed_variable_declaration(self: TypeChecker, decl: VariableDecl, scope~: DeclarationScope) -> VariableDecl raise TypeCheckerError {
   match scope {
     FileScope => self.typed_file_scope_variable_decl(decl)
     BlockScope => self.typed_local_variable_decl(decl)
   }
 }
 
-fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) -> @parse.FunctionDecl raise TypeCheckerError {
+fn TypeChecker::check_function_declaration(self: TypeChecker, decl: FunctionDecl) -> FunctionDecl raise TypeCheckerError {
   let fun_type = decl.to_type()
-  let has_body = not(decl.body.is_empty())
+  let has_body = not(decl.body is None)
   let mut already_defined = false
   let mut is_global = decl.storage_class != Some(Static)
 
@@ -250,18 +304,18 @@ fn check_function_declaration(self: TypeChecker, decl: @parse.FunctionDecl) -> @
   }
 }
 
-pub fn typed_decl(self: TypeChecker, decl: @parse.Decl, scope~: DeclarationScope) -> @parse.Decl raise TypeCheckerError {
+pub fn TypeChecker::typed_decl(self: TypeChecker, decl: Decl, scope~: DeclarationScope) -> Decl raise TypeCheckerError {
   match decl {
     VarDecl(decl) => VarDecl(self.typed_variable_declaration(decl, scope~))
     FunDecl(decl) => FunDecl(self.check_function_declaration(decl))
   }
 }
 
-pub fn typed_block(self: TypeChecker, block: Array[@parse.BlockItem]) -> Array[@parse.BlockItem] raise TypeCheckerError {
+pub fn TypeChecker::typed_block(self: TypeChecker, block: Array[BlockItem]) -> Array[BlockItem] raise TypeCheckerError {
   let typed_block = []
 
   for item in block {
-    let typed_item: @parse.BlockItem = match item {
+    let typed_item: BlockItem = match item {
       Stmt(stmt) => Stmt(self.typed_stmt(stmt))
       Decl(decl) => Decl(self.typed_decl(decl, scope=BlockScope))
     }
@@ -272,9 +326,13 @@ pub fn typed_block(self: TypeChecker, block: Array[@parse.BlockItem]) -> Array[@
   typed_block
 }
 
-fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type {
+fn get_common_type(ty1: Type, ty2: Type) -> Type {
   if ty1 == ty2 {
     return ty1
+  }
+
+  if ty1 == Double || ty2 == Double {
+    return Double
   }
 
   let ty1_size = ty1.byte_size()
@@ -291,21 +349,29 @@ fn get_common_type(ty1: @parse.Type, ty2: @parse.Type) -> @parse.Type {
   if ty1_size > ty2_size { ty1 } else { ty2 }
 }
 
-fn cast(expr: @parse.Expr, ty: @parse.Type) -> @parse.Expr {
-  if expr.ty() == ty {
-    expr
-  } else {
-    @parse.Cast(target_ty=ty, expr=expr, ty=Some(ty))
+fn is_illegal_binop_for_double(op: BinaryOp) -> Bool {
+  match op {
+    Rem | BitwiseAnd | BitwiseOr | BitwiseXor | ShiftLeft | ShiftRight => true
+    _ => false
   }
 }
 
-pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise TypeCheckerError {
+fn cast(expr: Expr, ty: Type) -> Expr {
+  if expr.ty() == ty {
+    expr
+  } else {
+    Cast(target_ty=ty, expr~, ty=Some(ty))
+  }
+}
+
+pub fn TypeChecker::typed_expr(self: TypeChecker, expr: Expr) -> Expr raise TypeCheckerError {
   match expr {
     Constant(val~, ty=_) => match val {
       IntConst(_) => Constant(val~, ty=Some(Int))
       LongConst(_) => Constant(val~, ty=Some(Long))
       UnsignedIntConst(_) => Constant(val~, ty=Some(UnsignedInt))
       UnsignedLongConst(_) => Constant(val~, ty=Some(UnsignedLong))
+      DoubleConst(_) => Constant(val~, ty=Some(Double))
     }
     Variable(name~, ty=_) => {
       match self.symbols.get(name) {
@@ -320,10 +386,15 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise Typ
     }
     Unary(op~, expr~, ty=_) => {
       let expr = self.typed_expr(expr)
+      let expr_ty = expr.ty()
 
-      let ty: @parse.Type = match op {
+      let ty: Type = match op {
         Not => Int
-        _ => expr.ty()
+        _ => expr_ty
+      }
+
+      if op == Complement && expr_ty == Double {
+        raise IllegalUnaryOperatorForDouble(op)
       }
 
       Unary(op~, expr~, ty=Some(ty))
@@ -331,11 +402,16 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise Typ
     Binary(op~, lhs~, rhs~, ty=_) => {
       let lhs = self.typed_expr(lhs)
       let rhs = self.typed_expr(rhs)
+      let common_ty = get_common_type(lhs.ty(), rhs.ty())
+
+      if common_ty == Double && is_illegal_binop_for_double(op) {
+        raise IllegalBinaryOperatorForDouble(op)
+      }
+
       match op {
         ShiftLeft | ShiftRight => Binary(op~, lhs~, rhs~, ty=Some(lhs.ty()))
         LogicalAnd | LogicalOr => Binary(op~, lhs~, rhs~, ty=Some(Int))
         _ => {
-          let common_ty = get_common_type(lhs.ty(), rhs.ty())
           let lhs = cast(lhs, common_ty)
           let rhs = cast(rhs, common_ty)
 
@@ -354,14 +430,42 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise Typ
     Assignment(op~, lhs~, rhs~, ty=_) => {
       let lhs = self.typed_expr(lhs)
       let rhs = self.typed_expr(rhs)
+      let lhs_ty = lhs.ty()
 
       match op {
-        AssignShl | AssignShr => {
-          Assignment(op~, lhs~, rhs~, ty=Some(lhs.ty()))
+        Assign => {
+          // Simple assignment: convert RHS to LHS type
+          Assignment(op~, lhs~, rhs=cast(rhs, lhs_ty), ty=Some(lhs_ty))
+        }
+        AssignShiftLeft | AssignShiftRight => {
+          // For shift assignments, RHS type doesn't matter for result type,
+          // but RHS cannot be double
+          if rhs.ty() == Double {
+            match op.binop() {
+              Some(binop) => raise IllegalBinaryOperatorForDouble(binop)
+              None => raise TypeCheckerError::Unreachable("shift assignment without binop")
+            }
+          }
+          Assignment(op~, lhs~, rhs~, ty=Some(lhs_ty))
         }
         _ => {
-          let common_ty = get_common_type(lhs.ty(), rhs.ty())
-          Assignment(op~, lhs~, rhs=cast(rhs, common_ty), ty=Some(common_ty))
+          // Compound assignment: operation uses common type, but result is LHS type
+          let common_ty = get_common_type(lhs_ty, rhs.ty())
+          
+          if common_ty == Double {
+            match op.binop() {
+              Some(op) => {
+                if is_illegal_binop_for_double(op) {
+                  raise IllegalBinaryOperatorForDouble(op)
+                }
+              }
+              None => ()
+            }
+          }
+          
+          // Don't cast LHS or RHS here - tacky codegen will handle the conversions
+          // Just set the result type to the common type so tacky knows to do conversions
+          Assignment(op~, lhs~, rhs~, ty=Some(common_ty))
         }
       }
     }
@@ -376,7 +480,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise Typ
     }
     Call(name~, args~, ty=_) => {
       match self.symbols.get(name) {
-        Some(Function(ty=@parse.FunType(params~, ret~), attributes=_)) => {
+        Some(Function(ty=FunType(params~, ret~), attributes=_)) => {
           if args.length() != params.length() {
             raise IncorrectArgumentCount(name=name, expected=params.length(), actual=args.length())
           }
@@ -386,9 +490,8 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise Typ
           for i in 0..<args.length() {
             let arg = self.typed_expr(args[i])
             let param_ty = params[i]
-            let arg_ty = arg.ty()
-            let common_ty = get_common_type(param_ty, arg_ty)
-            converted_args.push(cast(arg, common_ty))
+            // Cast argument to parameter type (conversion as if by assignment)
+            converted_args.push(cast(arg, param_ty))
           }
 
           Call(name=name, args=converted_args, ty=Some(ret))
@@ -401,7 +504,7 @@ pub fn typed_expr(self: TypeChecker, expr: @parse.Expr) -> @parse.Expr raise Typ
   }
 }
 
-pub fn typed_stmt(self: TypeChecker, stmt: @parse.Stmt) -> @parse.Stmt raise TypeCheckerError {
+pub fn TypeChecker::typed_stmt(self: TypeChecker, stmt: Stmt) -> Stmt raise TypeCheckerError {
   match stmt {
     Return(expr) => {
       match self.function_stack.last() {
@@ -441,7 +544,7 @@ pub fn typed_stmt(self: TypeChecker, stmt: @parse.Stmt) -> @parse.Stmt raise Typ
       While(cond~, body~, label~)
     }
     For(init~, cond~, post~, body~, label~) => {
-      let init: @parse.ForInit = match init {
+      let init: ForInit = match init {
         InitDecl(decl) => match decl.storage_class {
           Some(_) => raise StorageClassNotPermittedInForLoopInitializer
           None => InitDecl(self.typed_variable_declaration(decl, scope=BlockScope))
@@ -482,7 +585,7 @@ pub fn typed_stmt(self: TypeChecker, stmt: @parse.Stmt) -> @parse.Stmt raise Typ
   }
 }
 
-pub fn typed_program(self: TypeChecker, program: @parse.Program) -> @parse.Program raise TypeCheckerError {
+pub fn TypeChecker::typed_program(self: TypeChecker, program: Program) -> Program raise TypeCheckerError {
   let typed_decls = []
 
   for decl in program.decls {

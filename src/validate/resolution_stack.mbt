@@ -11,20 +11,20 @@ pub fn ResolutionStack::new() -> ResolutionStack {
 }
 
 pub fn ResolutionStack::push(self: ResolutionStack, entry: ResolutionStackEntry) -> Unit {
-  self.inner().push(entry)
+  self.0.push(entry)
 }
 
 pub fn ResolutionStack::pop(self: ResolutionStack) -> Unit {
-  let _ = self.inner().pop()
+  let _ = self.0.pop()
 }
 
 pub fn ResolutionStack::peek(self: ResolutionStack) -> ResolutionStackEntry? {
-  self.inner().last()
+  self.0.last()
 }
 
 pub fn ResolutionStack::get_innermost_loop_label(self: ResolutionStack) -> String? {
-  for i = self.inner().length() - 1; i >= 0; i = i - 1 {
-    if self.inner()[i] is Loop(label) {
+  for i = self.0.length() - 1; i >= 0; i = i - 1 {
+    if self.0[i] is Loop(label) {
       return Some(label)
     }
   }

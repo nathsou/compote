@@ -9,6 +9,10 @@ pub enum TacInst {
   SignExtend(src~: TacValue, dst~: TacValue)
   Truncate(src~: TacValue, dst~: TacValue)
   ZeroExtend(src~: TacValue, dst~: TacValue)
+  DoubleToInt(src~: TacValue, dst~: TacValue)
+  DoubleToUInt(src~: TacValue, dst~: TacValue)
+  IntToDouble(src~: TacValue, dst~: TacValue)
+  UIntToDouble(src~: TacValue, dst~: TacValue)
   Unary(op~: @parse.UnaryOp, src~: TacValue, dst~: TacValue)
   Binary(op~: @parse.BinaryOp, lhs~: TacValue, rhs~: TacValue, dst~: TacValue)
   Copy(src~: TacValue, dst~: TacValue)
@@ -28,7 +32,8 @@ pub struct TacFunctionDef {
 
 pub enum TacTopLevel {
   Function(TacFunctionDef)
-  StaticVar(name~: String, global~: Bool, init~: @validate.StaticInit, ty~: @parse.Type)
+  StaticVar(name~: String, global~: Bool, init~: StaticInit, ty~: Type)
+  StaticConst(name~: String, init~: StaticInit, ty~: Type)
 } derive(Show)
 
 pub struct TacProgram {
@@ -55,6 +60,9 @@ pub impl Show for TacProgram with output(self, logger: &Logger) {
       }
       StaticVar(name~, global=_, init~, ty=_) => {
         logger.write_string("static \{name} = \{init}\n")
+      }
+      StaticConst(name~, init~, ty=_) => {
+        logger.write_string("const \{name} = \{init}\n")
       }
     }
   }

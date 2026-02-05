@@ -11,18 +11,20 @@ pub enum Token {
   AmpersandEqual; PipeEqual; CaretEqual; LshiftEqual; RshiftEqual
   PlusPlus; MinusMinus
   // keywords
-  Int; Long; Signed; Unsigned
+  Int; Long; Signed; Unsigned; Double
   Return; Void; If; Else; Goto
   Do; While; For; Break; Continue
   Switch; Case; Default
   Static; Extern
   // literals
-  IntLiteral(Int); LongLiteral(Int64); UIntLiteral(UInt); ULongLiteral(UInt64)
+  IntLiteral(Int); LongLiteral(Int64)
+  UIntLiteral(UInt); ULongLiteral(UInt64)
+  DoubleLiteral(Double)
   // identifiers
   Identifier(String)
 } derive(Eq)
 
-pub fn to_binop(self: Token) -> BinaryOp? {
+pub fn Token::to_binop(self: Token) -> BinaryOp? {
   match self {
     Plus => Some(Add)
     Minus => Some(Sub)
@@ -51,21 +53,21 @@ pub fn to_binop(self: Token) -> BinaryOp? {
     AmpersandEqual => Some(Assignment(AssignAnd))
     PipeEqual => Some(Assignment(AssignOr))
     CaretEqual => Some(Assignment(AssignXor))
-    LshiftEqual => Some(Assignment(AssignShl))
-    RshiftEqual => Some(Assignment(AssignShr))
+    LshiftEqual => Some(Assignment(AssignShiftLeft))
+    RshiftEqual => Some(Assignment(AssignShiftRight))
     QuestionMark => Some(Ternary)
     _ => None
   }
 }
 
-pub fn is_type_specifier(self: Token) -> Bool {
+pub fn Token::is_type_specifier(self: Token) -> Bool {
   match self {
-    Int | Long | Unsigned | Signed => true
+    Int | Long | Unsigned | Signed | Double => true
     _ => false
   }
 }
 
-pub fn is_specifier(self: Token) -> Bool {
+pub fn Token::is_specifier(self: Token) -> Bool {
   match self {
     Extern | Static => true
     _ => self.is_type_specifier()
@@ -119,6 +121,7 @@ pub impl Show for Token with output(self, logger: &Logger) {
     Long => "long"
     Signed => "signed"
     Unsigned => "unsigned"
+    Double => "double"
     Return => "return"
     Void => "void"
     If => "if"
@@ -138,6 +141,7 @@ pub impl Show for Token with output(self, logger: &Logger) {
     LongLiteral(n) => n.to_string()
     UIntLiteral(n) => n.to_string()
     ULongLiteral(n) => n.to_string()
+    DoubleLiteral(n) => n.to_string()
     Identifier(s) => s
   })
 }
